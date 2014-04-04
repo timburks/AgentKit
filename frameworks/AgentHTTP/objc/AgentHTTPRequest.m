@@ -70,7 +70,7 @@
 
 - (NSDictionary *) post
 {
-    return [[self body] urlQueryDictionary];
+    return [[self body] agent_urlQueryDictionary];
 }
 
 @end

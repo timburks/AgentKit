@@ -45,7 +45,7 @@ static char int_to_char[] = "0123456789ABCDEF";
 
 @implementation NSString (AgentHTTPHelpers)
 
-- (NSString *) urlEncodedString
+- (NSString *) agent_urlEncodedString
 {
     NSMutableString *result = [NSMutableString string];
     int i = 0;
@@ -66,7 +66,7 @@ static char int_to_char[] = "0123456789ABCDEF";
     return result;
 }
 
-- (NSString *) urlDecodedString
+- (NSString *) agent_urlDecodedString
 {
     int i = 0;
     NSUInteger max = [self length];
@@ -96,7 +96,7 @@ static char int_to_char[] = "0123456789ABCDEF";
     return result;
 }
 
-- (NSDictionary *) urlQueryDictionary
+- (NSDictionary *) agent_urlQueryDictionary
 {
     NSMutableDictionary *result = [NSMutableDictionary dictionary];
     NSArray *pairs = [self componentsSeparatedByString:@"&"];
@@ -105,8 +105,8 @@ static char int_to_char[] = "0123456789ABCDEF";
     for (i = 0; i < max; i++) {
         NSArray *pair = [[pairs objectAtIndex:i] componentsSeparatedByString:@"="];
         if ([pair count] == 2) {
-            NSString *key = [[pair objectAtIndex:0] urlDecodedString];
-            NSString *value = [[pair objectAtIndex:1] urlDecodedString];
+            NSString *key = [[pair objectAtIndex:0] agent_urlDecodedString];
+            NSString *value = [[pair objectAtIndex:1] agent_urlDecodedString];
             [result setObject:value forKey:key];
         }
     }
@@ -117,7 +117,7 @@ static char int_to_char[] = "0123456789ABCDEF";
 
 @implementation NSDictionary (AgentHTTPHelpers)
 
-- (NSString *) urlQueryString
+- (NSString *) agent_urlQueryString
 {
     NSMutableString *result = [NSMutableString string];
     NSEnumerator *keyEnumerator = [[[self allKeys] sortedArrayUsingSelector:@selector(compare:)] objectEnumerator];
@@ -125,23 +125,23 @@ static char int_to_char[] = "0123456789ABCDEF";
     while ((key = [keyEnumerator nextObject])) {
         if ([result length] > 0) [result appendString:@"&"];
         [result appendString:[NSString stringWithFormat:@"%@=%@", 
-                              [key urlEncodedString], 
-                              [[[self objectForKey:key] stringValue] urlEncodedString]]];
+                              [key agent_urlEncodedString], 
+                              [[[self objectForKey:key] stringValue] agent_urlEncodedString]]];
     }
     return [NSString stringWithString:result];
 }
 
-- (NSData *) urlQueryData 
+- (NSData *) agent_urlQueryData 
 {
-    return [[self urlQueryString] dataUsingEncoding:NSUTF8StringEncoding];
+    return [[self agent_urlQueryString] dataUsingEncoding:NSUTF8StringEncoding];
 }
 
 @end
 
 @implementation NSData (AgentHTTPHelpers)
 
-- (NSDictionary *) urlQueryDictionary {
-    return [[[NSString alloc] initWithData:self encoding:NSUTF8StringEncoding] urlQueryDictionary];
+- (NSDictionary *) agent_urlQueryDictionary {
+    return [[[NSString alloc] initWithData:self encoding:NSUTF8StringEncoding] agent_urlQueryDictionary];
 }
 
 static NSMutableDictionary *parseHeaders(const char *headers)
@@ -186,7 +186,7 @@ static NSMutableDictionary *parseHeaders(const char *headers)
     return dict;
 }
 
-- (NSDictionary *) multipartDictionaryWithBoundary:(NSString *) boundary
+- (NSDictionary *) agent_multipartDictionaryWithBoundary:(NSString *) boundary
 {
     NSMutableDictionary *dict = [NSMutableDictionary dictionary];
     
@@ -273,7 +273,7 @@ static NSMutableDictionary *parseHeaders(const char *headers)
     return dict;
 }
 
-- (NSDictionary *) multipartDictionary
+- (NSDictionary *) agent_multipartDictionary
 {
     // scan for pattern
     const char *bytes = (const char *) [self bytes];
@@ -292,7 +292,7 @@ static NSMutableDictionary *parseHeaders(const char *headers)
     pattern[cursor] = 0x00;
     NSString *boundary = [[NSString alloc] initWithCString:pattern encoding:NSUTF8StringEncoding];
     free(pattern);
-    return [self multipartDictionaryWithBoundary:boundary];
+    return [self agent_multipartDictionaryWithBoundary:boundary];
 }
 
 @end
@@ -301,7 +301,7 @@ static NSMutableDictionary *parseHeaders(const char *headers)
 
 static const char *const hexEncodingTable = "0123456789abcdef";
 
-- (NSString *) hexEncodedString
+- (NSString *) agent_hexEncodedString
 {
     NSString *result = nil;
     size_t length = [self length];
@@ -324,7 +324,7 @@ static const char *const hexEncodingTable = "0123456789abcdef";
 
 #define HEXVALUE(c) (((c >= '0') && (c <= '9')) ? (c - '0') : ((c >= 'a') && (c <= 'f')) ? (c - 'a' + 10) : 0)
 
-+ (id) dataWithHexEncodedString:(NSString *) string
++ (id) agent_dataWithHexEncodedString:(NSString *) string
 {
     if (string == nil)
         return nil;
@@ -349,7 +349,7 @@ static const char *const hexEncodingTable = "0123456789abcdef";
 
 @implementation NSDate (AgentHTTPHelpers)
 // Get an RFC822-compliant representation of a date.
-- (NSString *) rfc822String
+- (NSString *) agent_rfc822String
 {
     NSDateFormatter *dateFormatter = [[NSDateFormatter alloc] init];
     NSLocale *enUS = [[NSLocale alloc] initWithLocaleIdentifier:@"en_US"];
@@ -362,7 +362,7 @@ static const char *const hexEncodingTable = "0123456789abcdef";
 }
 
 // Get an RFC1123-compliant representation of a date.
-- (NSString *) rfc1123String
+- (NSString *) agent_rfc1123String
 {
     NSDateFormatter *dateFormatter = [[NSDateFormatter alloc] init];
     dateFormatter.locale = [[NSLocale alloc] initWithLocaleIdentifier:@"en_US"];
@@ -374,7 +374,7 @@ static const char *const hexEncodingTable = "0123456789abcdef";
 }
 
 // Get an RFC3339-compliant representation of a date.
-- (NSString *) rfc3339String
+- (NSString *) agent_rfc3339String
 {
     NSDateFormatter *dateFormatter = [[NSDateFormatter alloc] init];
     [dateFormatter setLocale:[[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"]];
