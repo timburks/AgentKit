@@ -40,7 +40,7 @@
 
 @implementation NSData (AgentSSL)
 
-+ (NSData *) dataWithBIO:(BIO *) bio
++ (NSData *) agent_dataWithBIO:(BIO *) bio
 {
     NSMutableData *data = [NSMutableData new];
     unsigned char buffer[1024];
@@ -85,7 +85,7 @@
         return NO;
     }
     
-    NSData *deviceToken = [NSData dataWithBase64EncodedString:deviceTokenString];
+    NSData *deviceToken = [NSData agent_dataWithBase64EncodedString:deviceTokenString];
     const char *deviceTokenBinary = [deviceToken bytes];
     const char *payloadBuffer = [payloadString cStringUsingEncoding:NSASCIIStringEncoding];
     size_t payloadLength = strlen(payloadBuffer);
@@ -133,7 +133,7 @@
         return NO;
     }
     
-    NSData *deviceToken = [NSData dataWithBase64EncodedString:deviceTokenString];
+    NSData *deviceToken = [NSData agent_dataWithBase64EncodedString:deviceTokenString];
     const char *deviceTokenBinary = [deviceToken bytes];
     const char *payloadBuffer = [payloadString cStringUsingEncoding:NSASCIIStringEncoding];
     size_t payloadLength = strlen(payloadBuffer);
@@ -475,7 +475,7 @@ fprintf(stderr, "%s\n", astring);
     BIO *bio = BIO_new(BIO_s_mem());
     X509_NAME_print(bio, name, 0);
     
-    NSData *data = [NSData dataWithBIO:bio];
+    NSData *data = [NSData agent_dataWithBIO:bio];
     return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
 }
 
@@ -485,7 +485,7 @@ fprintf(stderr, "%s\n", astring);
     BIO *bio = BIO_new(BIO_s_mem());
     X509_NAME_print(bio, name, 0);
     
-    NSData *data = [NSData dataWithBIO:bio];
+    NSData *data = [NSData agent_dataWithBIO:bio];
     return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
 }
 
@@ -494,14 +494,14 @@ fprintf(stderr, "%s\n", astring);
 {
     BIO *bio = BIO_new(BIO_s_mem());
     i2d_X509_bio(bio, self->cert);
-    return [NSData dataWithBIO:bio];
+    return [NSData agent_dataWithBIO:bio];
 }
 
 - (NSString *) textRepresentation
 {
     BIO *bio = BIO_new(BIO_s_mem());
     PEM_write_bio_X509(bio, self->cert);
-    return [[NSString alloc] initWithData:[NSData dataWithBIO:bio] encoding:NSUTF8StringEncoding];
+    return [[NSString alloc] initWithData:[NSData agent_dataWithBIO:bio] encoding:NSUTF8StringEncoding];
 }
 
 @end
@@ -698,14 +698,14 @@ int add_attribute_octet(STACK_OF(X509_ATTRIBUTE) *attrs, int nid, char *buffer,
 {
     BIO *bio = BIO_new(BIO_s_mem());
     i2d_PKCS7_bio(bio, p7);
-    return [NSData dataWithBIO:bio];
+    return [NSData agent_dataWithBIO:bio];
 }
 
 - (NSString *) textRepresentation
 {
     BIO *bio = BIO_new(BIO_s_mem());
     PEM_write_bio_PKCS7(bio, p7);
-    return [[NSString alloc] initWithData:[NSData dataWithBIO:bio] encoding:NSUTF8StringEncoding];
+    return [[NSString alloc] initWithData:[NSData agent_dataWithBIO:bio] encoding:NSUTF8StringEncoding];
 }
 
 /*
@@ -730,7 +730,7 @@ int add_attribute_octet(STACK_OF(X509_ATTRIBUTE) *attrs, int nid, char *buffer,
         // NSLog(@"error %ld: %s reason=>%s", error, ERR_error_string(error, buf), ERR_reason_error_string(error));
         return nil;
     } else {
-        NSData *decryptedData = [NSData dataWithBIO:data];
+        NSData *decryptedData = [NSData agent_dataWithBIO:data];
         // NSLog(@"PKCS#7 contains %ld bytes of decrypted data", (unsigned long) [decryptedData length]);
         return decryptedData;
     }
@@ -933,7 +933,7 @@ X509 *My_PKCS7_cert_from_signer_info(PKCS7 *p7, PKCS7_SIGNER_INFO *si)
 	}
     
     /* Copy enveloped data from PKCS#7 */
-    NSData *envelopedData = [NSData dataWithBIO:pkcs7bio];
+    NSData *envelopedData = [NSData agent_dataWithBIO:pkcs7bio];
     // NSLog(@"PKCS#7 contains %ld bytes of enveloped data", (unsigned long) [envelopedData length]);
     
     if (PKCS7_signatureVerify(pkcs7bio, p7, si, signer_cert) <= 0) {
