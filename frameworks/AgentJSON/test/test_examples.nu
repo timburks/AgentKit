@@ -50,6 +50,11 @@
                                error:nil))
                (set expected (plist propertyList))
                (assert_equal expected json)
+(unless (eq expected ((expected agent_JSONRepresentation) agent_JSONValue))
+(puts "EXPECTED")
+(puts (expected description))
+(puts "ACTUAL")
+(puts (((expected agent_JSONRepresentation) agent_JSONValue) description)))
                (assert_equal expected (((expected agent_JSONRepresentation) agent_JSONValue)))))
      
      (- testJsonChecker is

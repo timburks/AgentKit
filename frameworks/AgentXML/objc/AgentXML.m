@@ -22,7 +22,7 @@
 @end
 
 @implementation AgentXMLNode
-@synthesize name, children, attributes;
+@synthesize name, children, attributes, namespaceURI, localName, prefix;
 
 - (id) init {
     if ((self = [super init])) {
@@ -69,7 +69,7 @@
 @end
 
 @implementation AgentXMLReader
-@synthesize rootNode;
+@synthesize rootNode, error = _error;
 
 - (id) init {
     if ((self = [super init])) {
