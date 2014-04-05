@@ -1,0 +1,671 @@
+#!/usr/local/bin/nush
+#
+# This is a WebDAV server based on MongoDB.
+#
+# Developed using the litmus WebDAV test suite: http://www.webdav.org/neon/litmus/
+#
+(load "AgentHTTP")
+(load "AgentXML")
+(load "AgentJSON")
+(load "AgentCrypto")
+(load "AgentMongoDB")
+
+(load "rackspace")
+
+(set TOP "TOP")
+
+(set rackspace (RSConnection new))
+(set result (perform (rackspace getAccessTokenForUsername:USERNAME apiKey:APIKEY)))
+(rackspace authenticateWithResult:(result JSONValue))
+
+(def prepare-files ()
+     (set mongo (AgentMongoDB new))
+     (mongo connect)
+     (unless (mongo findOne:(dict name:"files" parent:TOP) inCollection:"files.nodes")
+             (set now (NSDate date))
+             (set node (dict parent:TOP
+                         collection:YES
+                            created:now
+                           modified:now
+                               name:"files"))
+             (mongo insertObject:node
+                  intoCollection:"files.nodes")))
+
+(prepare-files)
+
+
+(set HTTP-200-OK "HTTP/1.1 200 OK")
+
+
+
+(delete "/files/everything"
+        (let ((mongo (AgentMongoDB new)))
+             (mongo connect)
+             (mongo removeWithCondition:(dict) fromCollection:"files.nodes"))
+        (prepare-files)
+        "OK")
+
+(def encode (path) ((path stringByReplacingOccurrencesOfString:" " withString:"%20")
+                    stringByReplacingOccurrencesOfString:"'" withString:"%27"))
+(def decode (path) ((path stringByReplacingOccurrencesOfString:"%20" withString:" ")
+                    stringByReplacingOccurrencesOfString:"%27" withString:"'"))
+
+(set ROOT "/var/webdav")
+
+(def server (request)
+     (+ (request scheme) "://" ((request headers) Host:)))
+
+(get "/files/server"
+     (+ "http://" ((REQUEST headers) Host:)))
+
+(def file-exists (path)
+     ((NSFileManager defaultManager) fileExistsAtPath:path))
+
+(def node-for-path (mongo path)
+     (set parts (path pathComponents))
+     (set node (dict _id:TOP))
+     (parts each:
+            (do (part)
+                (if node
+                    (set child (mongo findOne:(dict name:part parent:(node _id:)) inCollection:"files.nodes"))
+                    (set node child))))
+     node)
+
+(def children-for-node (mongo node)
+     (mongo findArray:(dict $query:(dict parent:(node _id:)) $orderby:(dict name:1)) inCollection:"files.nodes"))
+
+(def delete-node (mongo node)
+     (puts "deleting node")
+     (puts (node description))
+     (if (node collection:)
+         (set children (children-for-node mongo node))
+         (children each:(do (child) (delete-node mongo child))))
+     (mongo removeWithCondition:(dict _id:(node _id:)) fromCollection:"files.nodes"))
+
+(def copy-node (mongo sourceNode destinationParent destinationName)
+     (set sourceID (sourceNode _id:))
+     (sourceNode removeObjectForKey:"_id")
+     (sourceNode parent:(destinationParent _id:))
+     (if destinationName
+         (sourceNode name:destinationName))
+     (set destinationID (mongo insertObject:sourceNode
+                             intoCollection:"files.nodes"))
+     (sourceNode _id:destinationID)
+     (if (sourceNode collection:)
+         (set children (mongo findArray:(dict parent:sourceID) inCollection:"files.nodes"))
+         (children each:
+                   (do (child)
+                       (copy-node mongo child sourceNode nil)))))
+
+(def move-node (mongo sourceNode destinationParent destinationName)
+     (sourceNode parent:(destinationParent _id:))
+     (if destinationName
+         (sourceNode name:destinationName))
+     (mongo updateObject:sourceNode
+            inCollection:"files.nodes"
+           withCondition:(dict _id:(sourceNode _id:))
+       insertIfNecessary:YES
+   updateMultipleEntries:NO))
+
+(set PASSWORD "123123123")
+(set SALT "agentio")
+
+(get "/*path:"
+     (puts "GET #{*path}")
+     (set mongo (AgentMongoDB new))
+     (mongo connect)
+     
+     (set node (node-for-path mongo *path))
+     (cond ((not node)
+            (RESPONSE setStatus:404)
+            "Not found")
+           ((node hash:) ;; TODO check access permissions, etc.
+            (set data (mongo retrieveDataForGridFSFile:(node hash:)
+                                          inCollection:"files"
+                                            inDatabase:"files"))
+            ;(puts "getting #{(node hash:)} from rackspace")
+            ;(set data (perform (rackspace getDataWithName:(node hash:) inContainer:"agent")))
+            (puts (data length))
+            (set decrypted (data agent_aesDecryptedDataWithPassword:PASSWORD salt:SALT))
+            (puts "RETURNING DATA OF LENGTH #{(decrypted length)}")
+            decrypted)
+           (else
+                (set children (children-for-node mongo node))
+                (if (*path length)
+                    (then (set PATH (+ "/" *path)))
+                    (else (set PATH "")))
+                (set UP (PATH stringByDeletingLastPathComponent))
+                (&html (&body (&p (&a href:UP (+ "/" *path)))
+                              (&ul (children map:(do (child) (&li (&a href:(+ PATH "/" (child name:)) (child name:)))))))))))
+
+(delete "/*path:"
+        (puts "DELETE #{*path}")
+        (set mongo (AgentMongoDB new))
+        (mongo connect)
+        
+        (if (set node (node-for-path mongo *path)) ;; does the node exist?
+            (then (set fragment ((REQUEST URL) fragment))
+                  (if (and fragment (fragment length))
+                      (then (RESPONSE setStatus:409)
+                            "Deleting path with nonempty fragment")
+                      (else (puts "deleting #{*path}")
+                            (delete-node mongo node)
+                            "OK")))
+            (else (RESPONSE setStatus:404)
+                  "Not Found")))
+
+
+(if NO
+    (mongo writeData:data
+               named:version
+        withMIMEType:"application/zip"
+        inCollection:"appfiles"
+          inDatabase:SITE)
+    (mongo removeFile:version
+         inCollection:"appfiles"
+           inDatabase:SITE)
+    (set data
+         (mongo retrieveDataForGridFSFile:version-name
+                             inCollection:"appfiles"
+                               inDatabase:SITE)))
+
+
+
+(put "/*path:"
+     (puts "PUT #{*path}")
+     (set mongo (AgentMongoDB new))
+     (mongo connect)
+     
+     (puts "BODY LENGTH: #{((REQUEST body) length)}")
+     (unless (and (REQUEST body) ((REQUEST body) length))
+             (RESPONSE setStatus:400)
+             (return "Missing Body"0))
+     
+     (set data (REQUEST body))
+     (set encrypted (data agent_aesEncryptedDataWithPassword:PASSWORD salt:SALT))
+     (set hash ((encrypted agent_sha1Data) agent_hexEncodedString))
+     
+     (set result (mongo writeData:encrypted
+                            named:hash
+                     withMIMEType:"application/octet-stream"
+                     inCollection:"files"
+                       inDatabase:"files"))
+     (puts "GridFS write result: #{result}")
+     
+     ;(set result (perform (rackspace putData:encrypted withName:hash inContainer:"agent")))
+     ;(puts "Rackspace write result: #{((NSString alloc) initWithData:result encoding:NSUTF8StringEncoding)}")
+     
+     (if (set node (node-for-path mongo *path)) ;; does the node exist?
+         (then (if (node hash:) ;; is it a file?
+                   (then (node hash:hash
+                             length:(data length))
+                         (mongo updateObject:node
+                                inCollection:"files.nodes"
+                               withCondition:(dict _id:(node _id:))
+                           insertIfNecessary:YES
+                       updateMultipleEntries:NO)
+                         (RESPONSE setStatus:201)
+                         "OK")
+                   (else (RESPONSE setStatus:409)
+                         (return "putting a file onto a directory: #{*path}"))))
+         (else (if (set parent (node-for-path mongo (*path stringByDeletingLastPathComponent))) ;; does the parent exist?
+                   (then (set now (NSDate date))
+                         (set node (dict parent:(parent _id:)
+                                        created:now
+                                       modified:now
+                                           name:(*path lastPathComponent)
+                                           hash:hash
+                                         length:(data length)))
+                         (mongo insertObject:node
+                              intoCollection:"files.nodes")
+                         (RESPONSE setStatus:201)
+                         "OK")
+                   (else (RESPONSE setStatus:409)
+                         ("putting into a nonexistent directory: #{(*path stringByDeletingLastPathComponent)}"))))))
+
+(mkcol "/*path:"
+       (puts "MKCOL #{*path}")
+       (set mongo (AgentMongoDB new))
+       (mongo connect)
+       
+       (if ((REQUEST body) length)
+           (RESPONSE setStatus:415) (puts "no body")
+           (return "No body allowed on MKCOL"))
+       
+       (if (set node (node-for-path mongo *path)) ;; does the node exist?
+           (then (RESPONSE setStatus:405) (puts "already exists")
+                 (return "file or collection already exists at #{*path}"))
+           (else (if (set parent (node-for-path mongo (*path stringByDeletingLastPathComponent))) ;; does the parent exist?
+                     (set now (NSDate date))
+                     (then (set node (dict parent:(parent _id:)
+                                       collection:YES
+                                          created:now
+                                         modified:now
+                                             name:(*path lastPathComponent)))
+                           (mongo insertObject:node
+                                intoCollection:"files.nodes")
+                           (RESPONSE setStatus:201)
+                           "CREATED")
+                     (else (RESPONSE setStatus:409) (puts "no parent directory #{(*path stringByDeletingLastPathComponent)}")
+                           ("mkcol in a nonexistent directory: #{(*path stringByDeletingLastPathComponent)}"))))))
+
+(copy "/*path:"
+      (puts "COPY #{*path}")
+      (set mongo (AgentMongoDB new))
+      (mongo connect)
+      
+      (set pathToCopyFrom *path)
+      (puts "PATH TO COPY FROM: #{pathToCopyFrom}")
+      
+      (set overwrite ((REQUEST headers) Overwrite:))
+      (set destination (decode ((REQUEST headers) Destination:)))
+      (puts "DESTINATION: #{destination}")
+      
+      (set destination (destination stringByReplacingOccurrencesOfString:(+ (server REQUEST) "/") withString:""))
+      (if (eq (destination characterAtIndex:(- (destination length) 1)) '/')
+          (set destination (destination substringWithRange:(list 0 (- (destination length) 1)))))
+      (set pathToCopyTo destination)
+      (puts "PATH TO COPY TO: #{pathToCopyTo}")
+      
+      (set sourceNode (node-for-path mongo pathToCopyFrom))
+      (set destinationNode (node-for-path mongo pathToCopyTo))
+      (set destinationParent (node-for-path mongo (pathToCopyTo stringByDeletingLastPathComponent)))
+      
+      (puts "copying #{pathToCopyFrom} to #{pathToCopyTo}")
+      (puts "destination: #{pathToCopyTo} #{(destinationNode description)}")
+      
+      (cond ((and (eq overwrite "F") destinationNode)
+             (puts "WE WILL NOT OVERRIDE #{pathToCopyTo}")
+             (RESPONSE setStatus:412)
+             "")
+            ((not destinationParent)
+             (set message "no destination directory: #{(pathToCopyTo stringByDeletingLastPathComponent)}")
+             (RESPONSE setStatus:409)
+             message)
+            (else
+                 (if destinationNode
+                     (then (delete-node mongo destinationNode)
+                           (RESPONSE setStatus:204))
+                     (else (RESPONSE setStatus:201)))
+                 (copy-node mongo sourceNode destinationParent (pathToCopyTo lastPathComponent))
+                 "OK")))
+
+(move "/*path:"
+      (puts "MOVE #{*path}")
+      (set mongo (AgentMongoDB new))
+      (mongo connect)
+      
+      (set pathToMoveFrom *path)
+      
+      (set overwrite ((REQUEST headers) Overwrite:))
+      
+      (set destination (decode ((REQUEST headers) Destination:)))
+      (puts "DESTINATION: #{destination}")
+      
+      (set destination (destination stringByReplacingOccurrencesOfString:(+ (server REQUEST) "/") withString:""))
+      (if (eq (destination characterAtIndex:(- (destination length) 1)) '/')
+          (set destination (destination substringWithRange:(list 0 (- (destination length) 1)))))
+      
+      (set pathToMoveTo destination)
+      
+      (set sourceNode (node-for-path mongo pathToMoveFrom))
+      (set destinationNode (node-for-path mongo pathToMoveTo))
+      (set destinationParent (node-for-path mongo (pathToMoveTo stringByDeletingLastPathComponent)))
+      
+      (puts "moving #{pathToMoveFrom} to #{pathToMoveTo}")
+      (puts "destination exists? #{pathToMoveTo} #{destinationNode}")
+      
+      (cond ((and (eq overwrite "F") destinationNode)
+             (RESPONSE setStatus:412)
+             "")
+            ((not destinationParent)
+             (puts "no destination directory: #{(pathToMoveTo stringByDeletingLastPathComponent)}")
+             (RESPONSE setStatus:409)
+             "")
+            (else
+                 (if destinationNode
+                     (delete-node mongo destinationNode))
+                 (move-node mongo sourceNode destinationParent (pathToMoveTo lastPathComponent))
+                 (if destinationNode
+                     (then (RESPONSE setStatus:204))
+                     (else (RESPONSE setStatus:201)))
+                 "OK")))
+
+(options "/*path:"
+         (puts "OPTIONS #{*path}")
+         
+         (RESPONSE setValue:"OPTIONS, GET, HEAD, POST, PUT, DELETE, TRACE, COPY, MOVE, MKCOL, PROPFIND, PROPPATCH, LOCK, UNLOCK, ORDERPATCH"
+              forHTTPHeader:"Allow")
+         (RESPONSE setValue:"1, 2"
+              forHTTPHeader:"DAV")
+         "OK")
+
+(send &D:resourcetype setEmpty:YES)
+(send &D:collection setEmpty:YES)
+
+(macro &MARKUP (tag *stuff)
+       `(progn (set operator (NuMarkupOperator operatorWithTag:,tag))
+               (operator ,@*stuff)))
+
+(def CDATA (value)
+     (+ "<![CDATA[" value "]]>"))
+
+(set getters (array (dict name:"{DAV:}creationdate"
+                         block:(do (path node)
+                                   (puts "GETTING CREATION DATE OF #{path} NODE #{(node description)}")
+                                   (&D:creationdate ((node created:) agent_rfc1123String))))
+                    (dict name:"{DAV:}displayname"
+                         block:(do (path node)
+                                   (&D:displayname path)))
+                    (dict name:"{DAV:}getcontentlanguage"
+                         block:(do (path node)
+                                   (&D:getcontentlanguage "en")))
+                    (dict name:"{DAV:}getcontentlength"
+                         block:(do (path node)
+                                   (&D:getcontentlength
+                                    (if (node length:)
+                                        (then ((node length:) intValue))
+                                        (else 0)))))
+                    (dict name:"{DAV:}getcontenttype"
+                         block:(do (path node)
+                                   (if (node collection:)
+                                       (then nil)
+                                       (else (&D:getcontenttype "text")))))
+                    (dict name:"{DAV:}getetag"
+                         block:(do (path node)
+                                   (&D:getetag "00000000001")))
+                    (dict name:"{DAV:}getlastmodified"
+                         block:(do (path node)
+                                   (puts "GETTING MODIFIED DATE OF #{path} NODE #{(node description)}")
+                                   (&D:getlastmodified ((node modified:) agent_rfc1123String))))
+                    (dict name:"{DAV:}resourcetype"
+                         block:(do (path node)
+                                   (puts "GETTING RESOURCETYPE OF #{path} NODE #{(node description)}")
+                                   (&D:resourcetype (if (node collection:)
+                                                        (then (&D:collection))
+                                                        (else nil)))))
+                    (dict name:"{DAV:}lockdiscovery"
+                         block:(do (path node)
+                                   (&D:lockdiscovery "")))
+                    (dict name:"{DAV:}source"
+                         block:(do (path node)
+                                   (&D:source "")))
+                    (dict name:"{DAV:}supportedlock"
+                         block:(do (path node)
+                                   (&D:supportedlock "")))
+                    (dict name:"{DAV:}quota"
+                         block:(do (path node)
+                                   (&D:quota 9999999)))
+                    (dict name:"{DAV:}quotaused"
+                         block:(do (path node)
+                                   (&D:quotaused 9999)))
+                    (dict name:"{DAV:}quota-available-bytes"
+                         block:(do (path node)
+                                   (&D:quota-available-bytes 9990000)))
+                    (dict name:"{DAV:}quota-used-bytes"
+                         block:(do (path node)
+                                   (&D:quota-used-bytes 9999)))
+                    (dict name:"{DAV:}lockdiscovery"
+                         block:(do (path node)
+                                   (&D:what)))))
+
+(def getter-with-key (key)
+     (puts "searching for getter with key #{key}")
+     (set g nil)
+     (getters each:
+              (do (getter)
+                  (if (eq (getter name:) key) (set g getter))))
+     (puts "found #{(g description)}")
+     g)
+
+(def get-propstats (mongo command path node)
+     (puts "NODE")
+     (puts (node description))
+     (set propstats "")
+     
+     (set chosen-getters (array))
+     (if (command)
+         (then ((command children) each:
+                (do (prop)
+                    (puts "PROP")
+                    (puts (prop name))
+                    (if (eq (prop universalName) "{DAV:}allprop")
+                        (set chosen-getters getters))
+                    (if (eq (prop universalName) "{DAV:}prop")
+                        ((prop children) each:
+                         (do (keyNode)
+                             (set key (keyNode universalName))
+                             (if (set getter (getter-with-key key))
+                                 (then
+                                      (getter localName:(keyNode localName))
+                                      (getter namespaceURI:(keyNode namespaceURI))
+                                      (chosen-getters addObject:getter))
+                                 (else
+                                      (set getter (dict name:key
+                                                   localName:(keyNode localName)
+                                                namespaceURI:(keyNode namespaceURI)
+                                                       block:(do (path node)
+                                                                 (set properties (node properties:))
+                                                                 (set property (properties objectForKey:key))
+                                                                 (if property
+                                                                     (then (set value (property value:))
+                                                                           (&MARKUP (property keyLocalName:)
+                                                                                    xmlns:(property keyNamespaceURI:) value))
+                                                                     (else nil)))))
+                                      (chosen-getters addObject:getter)))))))))
+         (else (set chosen-getters getters)))
+     
+     (chosen-getters each:
+                     (do (getter)
+                         (if (set prop ((getter block:) path node))
+                             (then (propstats appendString:(&D:propstat (&D:prop prop)
+                                                            (&D:status HTTP-200-OK))))
+                             (else (propstats appendString:(&D:propstat (&D:prop (&MARKUP (getter localName:) xmlns:(getter namespaceURI:)))
+                                                            (&D:status "HTTP/1.1 404 Not Found")))))))
+     propstats)
+
+(propfind "/*path:"
+          (puts "PROPFIND '#{*path}'")
+          (set mongo (AgentMongoDB new))
+          (mongo connect)
+          
+          (if (REQUEST body) (puts (NSString stringWithData:(REQUEST body) encoding:NSUTF8StringEncoding)))
+          
+          (set node (node-for-path mongo *path))
+          (set children (children-for-node mongo node))
+          
+          (set depth ((REQUEST headers) Depth:))
+          (puts "DEPTH: #{depth}")
+          
+          (set command nil)
+          (set propstats nil)
+          (if (REQUEST body)
+              (set string (NSString stringWithData:(REQUEST body) encoding:NSUTF8StringEncoding))
+              (puts string)
+              
+              (set reader ((AgentXMLReader alloc) init))
+              (set command (reader readXMLFromString:string error:nil))
+              (unless command
+                      (RESPONSE setStatus:400)
+                      (return "invalid XML")))
+          
+          (if (or (eq command nil)
+                  (eq (command universalName) "{DAV:}propfind"))
+              
+              (set propstats (get-propstats mongo command *path node))
+              (puts propstats)
+              
+              (RESPONSE setStatus:207)
+              (set responses "")
+              (responses appendString:(&D:response (&D:href (encode (+ (server REQUEST)  "/" *path)))
+                                       propstats))
+              (if (eq depth "1")
+                  (set pathForHREF *path)
+                  (if (pathForHREF length) (set pathForHREF (+ pathForHREF "/")))
+                  (children each:
+                            (do (child)
+                                (set resourcename (+ (server REQUEST) "/" pathForHREF (child name:)))
+                                (set isDirectory (child collection:))
+                                (NSLog "CHILD #{resourcename}")
+                                (NSLog (child description))
+                                (NSLog "is directory: #{isDirectory}")
+                                (responses appendString:(+ (&D:response
+                                                            (&D:href (encode resourcename))
+                                                            (get-propstats mongo command (+ *path "/" (child name:)) child)))))))
+              (set result (+ "<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n"
+                             (&D:multistatus xmlns:D:"DAV:" responses)))
+              (RESPONSE setValue:"text/xml; charset=\"utf-8\"" forHTTPHeader:"Content-Type")
+              result))
+
+
+(proppatch "/*path:"
+           (puts "PROPPATCH '#{*path}'")
+           (set mongo (AgentMongoDB new))
+           (mongo connect)
+           
+           (set node (node-for-path mongo *path))
+           
+           (set string (NSString stringWithData:(REQUEST body) encoding:NSUTF8StringEncoding))
+           (set reader ((AgentXMLReader alloc) init))
+           (set command (reader readXMLFromString:string error:nil))
+           (if (eq (command universalName) "{DAV:}propertyupdate")
+               ((command children) each:
+                (do (element)
+                    (cond ((eq (element universalName) "{DAV:}set")
+                           ((element children) each:
+                            (do (propNode)
+                                (if (eq (propNode universalName) "{DAV:}prop")
+                                    ((propNode children) each:
+                                     (do (keyNode)
+                                         (set key (keyNode universalName))
+                                         ((keyNode children) each:
+                                          (do (valueNode)
+                                              (set value (valueNode stringValue))
+                                              (puts "saving #{key}=#{value} for path #{*path}")
+                                              (unless (set properties (node properties:))
+                                                      (set properties (dict)))
+                                              (properties setObject:(dict key:key
+                                                                 keyLocalName:(keyNode localName)
+                                                              keyNamespaceURI:(keyNode namespaceURI)
+                                                                        value:value)
+                                                             forKey:key)
+                                              (node properties:properties)
+                                              (mongo updateObject:node
+                                                     inCollection:"files.nodes"
+                                                    withCondition:(dict _id:(node _id:))
+                                                insertIfNecessary:NO
+                                            updateMultipleEntries:NO)))))))))
+                          ((eq (element universalName) "{DAV:}remove")
+                           ((element children) each:
+                            (do (propNode)
+                                (if (eq (propNode universalName) "{DAV:}prop")
+                                    ((propNode children) each:
+                                     (do (keyNode)
+                                         (set key (keyNode universalName))
+                                         (puts "removing value of #{key} for path #{*path}")
+                                         (unless (set properties (node properties:))
+                                                 (set properties (dict)))
+                                         (properties removeObjectForKey:key)
+                                         (node properties:properties)
+                                         (mongo updateObject:node
+                                                inCollection:"files.nodes"
+                                               withCondition:(dict _id:(node _id:))
+                                           insertIfNecessary:NO
+                                       updateMultipleEntries:NO)))))))))))
+           
+           
+           (puts "SANITY CHECK PROPERTIES ON #{*path}")
+           (set node (node-for-path mongo *path))
+           (puts (node description))
+           "ok")
+
+(send &D:write setEmpty:YES)
+(send &D:exclusive setEmpty:YES)
+
+(def lockdiscovery-for-path (mongo path)
+     (set node (node-for-path mongo path))
+     (set lockinfo (node lock:))
+     (&D:lockdiscovery
+      (&D:activelock
+       (&D:locktype (lockinfo locktype:))
+       (&D:lockscope (lockinfo lockscope:))
+       (&D:depth 0)
+       (&D:owner (lockinfo owner:))
+       (&D:timeout "Second-3600")
+       (&D:locktoken
+        (&D:href (lockinfo token:)))
+       (&D:lockroot
+        (&D:href (lockinfo lockroot:))))))
+
+(lock "/*path:"
+      (puts "LOCK '#{*path}'")
+      (set mongo (AgentMongoDB new))
+      (mongo connect)
+      
+      (unless (REQUEST body)
+              ;; lock refresh
+              (RESPONSE setStatus:200)
+              (return "unsupported lock refresh"))
+      
+      (set string (NSString stringWithData:(REQUEST body) encoding:NSUTF8StringEncoding))
+      (puts string)
+      (set reader ((AgentXMLReader alloc) init))
+      (set command (reader readXMLFromString:string error:nil))
+      
+      ;; lock properties
+      (set lockscope nil)
+      (set locktype nil)
+      (set owner nil)
+      (if (eq (command universalName) "{DAV:}lockinfo")
+          ((command children) each:
+           (do (element)
+               (cond ((eq (element universalName) "{DAV:}lockscope")
+                      (set lockscope (element stringContents)))
+                     ((eq (element universalName) "{DAV:}locktype")
+                      (set locktype (element stringContents)))
+                     ((eq (element universalName) "{DAV:}owner")
+                      (set owner (element stringContents)))
+                     ))))
+      
+      (set token "opaquelocktoken:12341234-1234-1234-1234-1234123456")
+      (set lock (dict lockscope:lockscope
+                       locktype:locktype
+                          token:token
+                       lockroot:(+ (server REQUEST) "/" *path)
+                          owner:owner))
+      
+      (set node (node-for-path mongo *path))
+      (node lock:lock)
+      (mongo updateObject:node
+             inCollection:"files.nodes"
+            withCondition:(dict _id:(node _id:))
+        insertIfNecessary:NO
+    updateMultipleEntries:NO)
+      
+      ;; pretend valid lock
+      (RESPONSE setStatus:200)
+      (RESPONSE setValue:"text/xml; charset=\"utf-8\"" forHTTPHeader:"Content-Type")
+      (RESPONSE setValue:token forHTTPHeader:"Lock-Token")
+      (set lockdiscovery (lockdiscovery-for-path mongo *path))
+      
+      (set result (+ "<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n"
+                     (&D:prop xmlns:D:"DAV:"
+                      lockdiscovery)))
+      (puts result)
+      result)
+
+(unlock "/*path:"
+        (puts "UNLOCK '#{*path}'")
+        (set mongo (AgentMongoDB new))
+        (mongo connect)
+        
+        (RESPONSE setStatus:204)
+        (set string (NSString stringWithData:(REQUEST body) encoding:NSUTF8StringEncoding))
+        (puts string)
+        "")
+
+;(AgentLibEVHTPServer run)
+(set s ((AgentLibEVHTPServer alloc) initWithService:(AgentHTTPService sharedService)))
+(s setVerbose:YES)
+(s run)
+

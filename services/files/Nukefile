@@ -1,4 +1,4 @@
-(set appname "accounts")
+(set appname "files")
 
 (set agentbox "http://alpha.agent.io")
 (set credentials "tim:admin123")
@@ -6,7 +6,7 @@
 
 (task "zip" is
       (SH "mkdir -p build/#{appname}.app")
-      (SH "cp -r keys.nu build/#{appname}.app")
+      (SH "cp rackspace.nu build/#{appname}.app")
       (SH "cp #{appname} build/#{appname}.app/#{appname}")
       (SH "cd build; zip -r #{appname}.zip #{appname}.app"))
 

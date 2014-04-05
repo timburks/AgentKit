@@ -1,0 +1,35 @@
+(set SERVER "http://localhost:8080")
+
+(def perform (request)
+     (set result (NSURLConnection sendSynchronousRequest:request returningResponse:(set responsep (NuReference new)) error:(set errorp (NuReference new))))
+     (set string ((NSString alloc) initWithData:result encoding:NSUTF8StringEncoding))
+     (puts "#{((responsep value) statusCode)}: #{string}")
+     result)
+
+(def delete (path)
+     (set URL (NSURL URLWithString:(+ SERVER "/" path)))
+     (set request (NSMutableURLRequest requestWithURL:URL))
+     (request setHTTPMethod:"DELETE")
+     (perform request))
+
+(def mkcol (path)
+     (set URL (NSURL URLWithString:(+ SERVER "/" path)))
+     (set request (NSMutableURLRequest requestWithURL:URL))
+     (request setHTTPMethod:"MKCOL")
+     (perform request))
+
+(def propfind (path)
+     (set URL (NSURL URLWithString:(+ SERVER "/" path)))
+     (set request (NSMutableURLRequest requestWithURL:URL))
+     (request setValue:"1" forHTTPHeaderField:"Depth")
+     (request setHTTPMethod:"PROPFIND")
+     (perform request))
+
+(task "root" is
+      (mkcol "root"))
+
+(task "reset" is
+      (delete "everything"))
+
+(task "dir" is
+      (propfind ""))
