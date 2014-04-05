@@ -1,5 +1,5 @@
 (set appname "subsite")
-(set deus "http://agent.io")
+(set deus "http://alpha.agent.io")
 (set credentials "tim:admin123")
 
 (task "zip" is

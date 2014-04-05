@@ -71,7 +71,7 @@ sudo apt-get install libdispatch-dev -y
 git clone https://github.com/timburks/nu.git
 
 cd nu
-git checkout gnustep-libobjc2
+git checkout master
 make
 ./mininush tools/nuke install
 cd ..

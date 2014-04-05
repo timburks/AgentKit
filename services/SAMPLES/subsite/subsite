@@ -1,5 +1,5 @@
 #!/usr/local/bin/nush
-(load "RadHTTP:macros")
+(load "AgentHTTP")
 
 (function table-for-dictionary (dictionary)
           (set keys ((dictionary allKeys) sort))
@@ -23,4 +23,4 @@
                               (table-for-dictionary environment)
                               )))))
 
-(RadHTTPServer run)
+(AgentHTTPServer run)
