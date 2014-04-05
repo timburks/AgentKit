@@ -1,0 +1,810 @@
+#!/usr/local/bin/nush
+(load "AgentHTTP")
+(load "AgentCrypto")
+(load "AgentMongoDB")
+(load "AgentJSON")
+(load "keys")
+
+(def mask-username (username)
+     ((username componentsSeparatedByString:"@") 0))
+
+(def encode-username (username)
+     ((username dataUsingEncoding:NSUTF8StringEncoding) agent_base64EncodedString))
+
+(def decode-username (encoding)
+     (NSString stringWithData:(NSData agent_dataWithBase64EncodedString:encoding) encoding:NSUTF8StringEncoding))
+
+(def oid (string) ;; MongoDB helper
+     ((AgentBSONObjectID alloc) initWithString:string))
+
+(macro redirect (location)
+       `(progn (RESPONSE setStatus:303)
+               (RESPONSE setValue:,location forHTTPHeader:"Location")
+               "redirecting"))
+
+;(set TEST_NAME "timburks@gmail.com")
+
+(macro user-is-logged-in (REQUEST)
+       `(progn
+              (set google_screen_name nil)
+              (set twitter_screen_name nil)
+              (set dropbox_screen_name nil)
+              (set box_screen_name nil)
+              (set google_session nil)
+              (set twitter_session nil)
+              (set dropbox_session nil)
+              (set box_session nil)
+              (NSLog "cookies")
+              (NSLog ((,REQUEST cookies) description))
+              (if (defined TEST_NAME)
+                  (then (set google_screen_name TEST_NAME))
+                  (else (if (set token ((,REQUEST cookies) session:))
+                            (then (set mongo (AgentMongoDB new))
+                                  (mongo connect)
+                                  (if (set google_session (mongo findOne:(dict token:token) inCollection:"accounts.google_sessions"))
+                                      (set google_screen_name ((google_session user:) email:)))
+                                  (if (set twitter_session (mongo findOne:(dict token:token) inCollection:"accounts.twitter_sessions"))
+                                      (set twitter_screen_name (twitter_session screen_name:)))
+                                  (if (set dropbox_session (mongo findOne:(dict token:token) inCollection:"accounts.dropbox_sessions"))
+                                      (set dropbox_screen_name (dropbox_session uid:)))
+                                  (if (set box_session (mongo findOne:(dict token:token) inCollection:"accounts.box_sessions"))
+                                      (set box_screen_name (box_session description)))
+                                  ))))
+              (NSLog "twitter?")
+              (NSLog (twitter_session description))
+              google_screen_name))
+
+(macro administrator-is-logged-in (REQUEST)
+       `(progn (unless (and (defined google_screen_name) google_screen_name)
+                       (user-is-logged-in ,REQUEST))
+               (and google_screen_name (eq google_screen_name ADMIN))))
+
+(macro authenticate ()
+       '(progn (user-is-logged-in REQUEST)))
+
+;; A class for managing user-identifying cookies.
+(class AgentCookie is NSObject
+ 
+ (+ (id) cookieWithName:(id) name value:(id)value is
+    ((self alloc) initWithName:name value:value expiration:(NSDate dateWithTimeIntervalSinceNow:3600)))
+ 
+ (- (id) initWithName:(id) name value:(id) value expiration:(id) expiration is
+    (super init)
+    (set @name name)
+    (set @value value)
+    (set @expiration expiration)
+    (set @stringValue nil)
+    self)
+ 
+ (- (id) description is
+    "cookie=#{@name} path=\"/\" value=#{@value} expiration=#{(@expiration agent_rfc1123String)}")
+ 
+ ;; Get a string value for a cookie suitable for inclusion in a response header.
+ (- (id) stringValue is "#{@name}=#{@value}; path=\/; Expires:#{(@expiration agent_rfc1123String)};"))
+
+(def nonce () ((AgentUUID new) stringValue))
+
+;;;;;
+
+;; local signin
+
+(macro signin-form ()
+       `(progn (htmlpage "Sign In"
+                         (&div class:"row"
+                               (&div class:"large-3 columns" (&p))
+                               (&div class:"large-9 columns"
+                                     (&h2 ,message)
+                                     (&form id:"email-form" method:"post" action:"/accounts/signin"
+                                            (&table (&tr (&td (&label for:"username" "Username "
+                                                                    style:"margin-right:2em"))
+                                                         (&td (&input id:"username"
+                                                                    type:"text"
+                                                                   width:20
+                                                                    name:"username"
+                                                                   title:"username"
+                                                                   value:,username)))
+                                                    (&tr (&td (&label for:"password" "Password "
+                                                                    style:"margin-right:2em"))
+                                                         (&td (&input id:"password"
+                                                                    type:"password"
+                                                                   width:20
+                                                                    name:"password"
+                                                                   title:"password"
+                                                                   value:,password)))
+                                                    (&tr (&td)
+                                                         (&td (&button type:"submit" "&nbsp;Sign in&nbsp;"))))))))))
+
+(get "/accounts/signin"
+     (REQUEST setContentType:"text/html")
+     (set username "")
+     (set password "")
+     (set message "Please sign in.")
+     (signin-form))
+
+(set PASSWORD_SALT "123")
+
+(post "/accounts/signin"
+      (set mongo (AgentMongoDB new))
+      (mongo connect)
+      (REQUEST setContentType:"text/html")
+      (set ip-address ((REQUEST headers) "X-Forwarded-For"))
+      (set username ((REQUEST post) "username"))
+      (set password ((REQUEST post) "password"))
+      (puts ((REQUEST post) description))
+      (cond ((or (not username) (not password))
+             (set message "Missing username or password. Try that again.")
+             (eval signin-form))
+            ((set account (mongo findOne:(dict username:username
+                                               password:(password md5HashWithSalt:PASSWORD_SALT))
+                            inCollection:"accounts.users"))
+             (set session-cookie (create-cookie SITE))
+             (puts "setting cookie: #{(display-cookie session-cookie)}")
+             (RESPONSE setValue:(display-cookie session-cookie) forHTTPHeader:"Set-Cookie")
+             (set session (dict account_id:(account _id:) cookie:(session-cookie value:)))
+             (puts "MATCH")
+             (mongo updateObject:session
+                    inCollection:"accounts.sessions"
+                   withCondition:(dict account_id:(account _id:))
+               insertIfNecessary:YES
+           updateMultipleEntries:NO)
+             (RESPONSE redirectResponseToLocation:"/accounts")
+             )
+            (else (set message "Password mismatch. Try that again.")
+                  (eval signin-form))))
+
+
+
+;;;;;
+
+(get "/accounts/google/signin"
+     (set token (nonce)) ;; google recommends that we save this and check it in the callback handler
+     (set query (dict client_id:(GOOGLE_OAUTH client_id:)
+                  response_type:"code"
+                         prompt:"consent"
+                          scope:"https://www.googleapis.com/auth/drive openid email"
+                   redirect_uri:(GOOGLE_OAUTH redirect_uri:)
+                          state:token))
+     (set path (+ "https://accounts.google.com/o/oauth2/auth?" (query agent_urlQueryString)))
+     (redirect path))
+
+;; https://developers.google.com/accounts/docs/OAuth2Login
+(get "/accounts/google/oauth2callback"
+     (set query ((REQUEST query) agent_urlQueryDictionary))
+     (unless (query code:)
+             (return (redirect "/accounts")))
+     (set path "https://accounts.google.com/o/oauth2/token")
+     (set post (dict code:(query code:)
+                client_id:(GOOGLE_OAUTH client_id:)
+            client_secret:(GOOGLE_OAUTH client_secret:)
+             redirect_uri:(GOOGLE_OAUTH redirect_uri:)
+               grant_type:"authorization_code"))
+     (set request (NSMutableURLRequest requestWithURL:(NSURL URLWithString:path)))
+     (request setHTTPMethod:"POST")
+     (request setHTTPBody:((post agent_urlQueryString) dataUsingEncoding:NSUTF8StringEncoding))
+     (set responseData
+          (NSURLConnection sendSynchronousRequest:request
+                                returningResponse:(set responsep (NuReference new))
+                                            error:(set errorp (NuReference new))))
+     (set responseString (NSString stringWithData:responseData encoding:NSUTF8StringEncoding))
+     (set responseObject (responseString agent_JSONValue))
+     (set id_token (responseObject id_token:))
+     ;; the response is a JSON Web Token (http://openid.net/specs/draft-jones-json-web-token-07.html)
+     (set parts (id_token componentsSeparatedByString:"."))
+     (set payload (parts 1))
+     ;; convert the base64 encoding to the version we can decode
+     (set payload (payload stringByReplacingOccurrencesOfString:"." withString:"+"))
+     (set payload (payload stringByReplacingOccurrencesOfString:"_" withString:"/"))
+     (set data (NSData agent_dataWithBase64EncodedString:payload))
+     (set string (NSString stringWithData:data encoding:NSUTF8StringEncoding))
+     (set object (string agent_JSONValue))
+     ;; save session info in database
+     (set mongo (AgentMongoDB new))
+     (mongo connect)
+     (mongo insertObject:responseObject intoCollection:"accounts.responses")
+     (set result (responseObject mutableCopy))
+     (result user:object)
+     
+     (unless (set SESSIONTOKEN ((REQUEST cookies) session:))
+             (set SESSIONTOKEN (nonce))
+             ;; let's set a cookie too
+             (set sessionCookie (AgentCookie cookieWithName:"session" value:SESSIONTOKEN))
+             (RESPONSE setValue:(sessionCookie stringValue) forHTTPHeader:"Set-Cookie"))
+     (result created:(NSDate date) token:SESSIONTOKEN)
+     (set session-id (mongo insertObject:result intoCollection:"accounts.google_sessions"))
+     
+     (redirect "/accounts"))
+
+(post "/accounts/google/signout"
+      (NSLog "SIGNING OUT OF GOOGLE")
+      (if (set token ((REQUEST cookies) session:))
+          (set mongo (AgentMongoDB new))
+          (mongo connect)
+          (mongo removeWithCondition:(dict token:token)
+                      fromCollection:"accounts.google_sessions"))
+      (redirect (or (((REQUEST query) agent_urlQueryDictionary) r:) "/accounts")))
+
+
+;; MongoDB helper
+(function oid (string)
+          ((AgentBSONObjectID alloc) initWithString:string))
+
+(macro redirect (location)
+       `(progn (RESPONSE setStatus:303)
+               (RESPONSE setValue:,location forHTTPHeader:"Location")
+               "redirecting"))
+
+;;;;; Twitter-based signin
+
+;; ===== OAuth =====
+(macro xxuser-is-logged-in (REQUEST)
+       `(progn (set screen_name nil)
+               (if (defined TEST_NAME)
+                   (then (set screen_name TEST_NAME))
+                   (else (if (set oauth_token ((,REQUEST cookies) session:))
+                             (then (set mongo (AgentMongoDB new))
+                                   (mongo connect)
+                                   (set oauth_session (mongo findOne:(dict oauth_token:oauth_token) inCollection:"accounts.twitter_sessions"))
+                                   (set screen_name (oauth_session screen_name:))))))
+               screen_name))
+
+(macro administrator-is-logged-in (REQUEST)
+       `(progn (unless (and (defined screen_name) screen_name)
+                       (user-is-logged-in ,REQUEST))
+               (and screen_name (eq screen_name ADMIN))))
+
+(macro xxauthenticate ()
+       '(progn (user-is-logged-in REQUEST)))
+
+(function nonce () ((AgentUUID new) stringValue))
+
+(function oauth-sign (method url m secret)
+          (set presignature ((((m allKeys) sort) map:
+                              (do (key) ((+ key "=" ((m objectForKey:key) agent_urlEncodedString))))) componentsJoinedByString:"&"))
+          (set signature-base-string (+ method "&" (url agent_urlEncodedString) "&" (presignature agent_urlEncodedString)))
+          (set signature ((signature-base-string dataUsingEncoding:NSUTF8StringEncoding)
+                          agent_hmacSha1DataWithKey:(secret dataUsingEncoding:NSUTF8StringEncoding)))
+          (set b64 (signature agent_base64EncodedString))
+          (m setObject:b64 forKey:"oauth_signature"))
+
+(function oauth-request (method method_url method_call consumer_secret token_secret)
+          (oauth-sign method method_url method_call (+ consumer_secret "&" token_secret))
+          (set path method_url)
+          (set url (NSURL URLWithString:path))
+          (set request (NSMutableURLRequest requestWithURL:url))
+          (request setHTTPMethod:method)
+          (set authorization (+ "OAuth "
+                                ((((method_call allKeys) sort) map:
+                                  (do (key) ((+ key "=\"" ((method_call objectForKey:key) agent_urlEncodedString) "\""))))
+                                 componentsJoinedByString:",")))
+          (request addValue:authorization forHTTPHeaderField:"Authorization")
+          ;(puts (request curlCommand))
+          (set response (NuReference new))
+          (set error (NuReference new))
+          (set data (NSURLConnection sendSynchronousRequest:request returningResponse:response error:error))
+          (set s (NSString stringWithData:data encoding:NSUTF8StringEncoding))
+          (set result (s agent_urlQueryDictionary))
+          result)
+
+(get "/accounts/twitter/signin"
+     (set mongo (AgentMongoDB new))
+     (mongo connect)
+     (set returnAddress (((REQUEST query) agent_urlQueryDictionary) r:))
+     (set result
+          (oauth-request "POST"
+                         (TWITTER_OAUTH oauth_request_token_url:)
+                         (dict oauth_version:"1.0"
+                                 oauth_nonce:(nonce)
+                             oauth_timestamp:((((NSDate date) timeIntervalSince1970) intValue) stringValue)
+                              oauth_callback:"http://alpha.agent.io/accounts/twitter/callback"
+                          oauth_consumer_key:(TWITTER_OAUTH oauth_consumer_key:)
+                      oauth_signature_method:"HMAC-SHA1")
+                         (TWITTER_OAUTH oauth_consumer_secret:)
+                         ""))
+     (unless (and (result oauth_token:) (result oauth_token_secret:))
+             (puts "Twitter OAuth error")
+             (puts (result description))
+             (return (redirect "/accounts")))
+     (set oauth_session (dict oauth_token:(result oauth_token:)
+                       oauth_token_secret:(result oauth_token_secret:)
+                           return_address:returnAddress
+                               created_at:(NSDate date)))
+     (mongo insertObject:oauth_session intoCollection:"accounts.twitter_sessions")
+     (set url (+ (TWITTER_OAUTH oauth_authorize_url:) "?oauth_token=" (result oauth_token:)))
+     (redirect url))
+
+(get "/accounts/twitter/callback"
+     (set mongo (AgentMongoDB new))
+     (mongo connect)
+     (set TOKEN (((REQUEST query) agent_urlQueryDictionary) oauth_token:))
+     (unless TOKEN
+             (NSLog "no token sent to twitter-callback, assuming access denied")
+             (return (redirect "/accounts")))
+     (set VERIFIER (((REQUEST query) agent_urlQueryDictionary) oauth_verifier:))
+     (unless VERIFIER
+             (NSLog "no verifier set to twitter-callback, assuming access denied")
+             (return (redirect "/accounts")))
+     (set oauth_session (mongo findOne:(dict oauth_token:TOKEN) inCollection:"accounts.twitter_sessions"))
+     (unless oauth_session
+             (NSLog "oauth session not found")
+             (&pre ((REQUEST query) description))
+             (return (redirect "/accounts")))
+     (set returnAddress (oauth_session "return_address"))
+     (set result
+          (oauth-request "POST"
+                         (TWITTER_OAUTH oauth_access_token_url:)
+                         (dict oauth_version: "1.0"
+                                 oauth_nonce:(nonce)
+                             oauth_timestamp:((((NSDate date) timeIntervalSince1970) intValue) stringValue)
+                          oauth_consumer_key:(TWITTER_OAUTH oauth_consumer_key:)
+                                 oauth_token:TOKEN
+                      oauth_signature_method:"HMAC-SHA1"
+                              oauth_verifier:VERIFIER)
+                         (TWITTER_OAUTH oauth_consumer_secret:)
+                         (oauth_session oauth_token_secret:)))
+     ;; delete the old session before we parse the results
+     (mongo removeWithCondition:(dict oauth_token:TOKEN) fromCollection:"accounts.twitter_sessions")
+     
+     (set SCREEN_NAME (result screen_name:))
+     (set USER_ID (result user_id:))
+     (set TOKEN (result oauth_token:))
+     (set TOKEN_SECRET (result oauth_token_secret:))
+     (set SECRET (+ (TWITTER_OAUTH oauth_consumer_secret:) "&" TOKEN_SECRET))
+     (NSLog (result description))
+     
+     (unless (set SESSIONTOKEN ((REQUEST cookies) session:))
+             (set SESSIONTOKEN (nonce))
+             ;; let's set a cookie too
+             (set sessionCookie (AgentCookie cookieWithName:"session" value:SESSIONTOKEN))
+             (RESPONSE setValue:(sessionCookie stringValue) forHTTPHeader:"Set-Cookie"))
+     ;; save session info in database
+     (result created:(NSDate date) token:SESSIONTOKEN)
+     (set session-id (mongo insertObject:result intoCollection:"accounts.twitter_sessions"))
+     
+     (redirect (or returnAddress "/accounts")))
+
+(post "/accounts/twitter/signout"
+      (if (set sessiontoken ((REQUEST cookies) session:))
+          (set mongo (AgentMongoDB new))
+          (mongo connect)
+          (mongo removeWithCondition:(dict token:sessiontoken)
+                      fromCollection:"accounts.twitter_sessions"))
+      (redirect (or (((REQUEST query) agent_urlQueryDictionary) r:) "/accounts")))
+
+;;;;;
+
+
+(get "/accounts/dropbox/signin"
+     (set token (nonce))
+     (set query (dict client_id:(DROPBOX_OAUTH client_id:)
+                  response_type:"code"
+                   redirect_uri:(DROPBOX_OAUTH redirect_uri:)
+                          state:token))
+     (set path (+ "https://www.dropbox.com/1/oauth2/authorize?" (query agent_urlQueryString)))
+     (redirect path))
+
+(get "/accounts/dropbox/oauth2callback"
+     (NSLog "DROPBOX CALLBACK")
+     (set query ((REQUEST query) agent_urlQueryDictionary))
+     (unless (query code:)
+             (return (redirect "/accounts")))
+     (NSLog (query code:))
+     (set path "https://api.dropbox.com/1/oauth2/token")
+     (set post (dict code:(query code:)
+                client_id:(DROPBOX_OAUTH client_id:)
+            client_secret:(DROPBOX_OAUTH client_secret:)
+             redirect_uri:(DROPBOX_OAUTH redirect_uri:)
+               grant_type:"authorization_code"))
+     (set request (NSMutableURLRequest requestWithURL:(NSURL URLWithString:path)))
+     (request setHTTPMethod:"POST")
+     (request setHTTPBody:((post agent_urlQueryString) dataUsingEncoding:NSUTF8StringEncoding))
+     (set responseData
+          (NSURLConnection sendSynchronousRequest:request
+                                returningResponse:(set responsep (NuReference new))
+                                            error:(set errorp (NuReference new))))
+     (set responseString (NSString stringWithData:responseData encoding:NSUTF8StringEncoding))
+     (set responseObject (responseString agent_JSONValue))
+     
+     ;; save session info in database
+     (set mongo (AgentMongoDB new))
+     (mongo connect)
+     (mongo insertObject:responseObject intoCollection:"accounts.responses")
+     (set result (responseObject mutableCopy))
+     
+     (unless (set SESSIONTOKEN ((REQUEST cookies) session:))
+             (set SESSIONTOKEN (nonce))
+             ;; let's set a cookie too
+             (set sessionCookie (AgentCookie cookieWithName:"session" value:SESSIONTOKEN))
+             (RESPONSE setValue:(sessionCookie stringValue) forHTTPHeader:"Set-Cookie"))
+     (result created:(NSDate date) token:SESSIONTOKEN)
+     (set session-id (mongo insertObject:result intoCollection:"accounts.dropbox_sessions"))
+     
+     (redirect "/accounts"))
+
+(post "/accounts/dropbox/signout"
+      (NSLog "SIGNING OUT OF DROPBOX")
+      (if (set token ((REQUEST cookies) session:))
+          (set mongo (AgentMongoDB new))
+          (mongo connect)
+          (mongo removeWithCondition:(dict token:token)
+                      fromCollection:"accounts.dropbox_sessions"))
+      (redirect (or (((REQUEST query) agent_urlQueryDictionary) r:) "/accounts")))
+
+
+
+;;;;;
+
+
+(get "/accounts/box/signin"
+     (set token (nonce))
+     (set query (dict client_id:(BOX_OAUTH client_id:)
+                  response_type:"code"
+                   redirect_uri:(BOX_OAUTH redirect_uri:)
+                          state:token))
+     (set path (+ "https://www.box.com/api/oauth2/authorize?" (query agent_urlQueryString)))
+     (redirect path))
+
+(get "/accounts/box/oauth2callback"
+     (NSLog "BOX CALLBACK")
+     (set query ((REQUEST query) agent_urlQueryDictionary))
+     (unless (query code:)
+             (return (redirect "/accounts")))
+     (NSLog (query code:))
+     (set path "https://www.box.com/api/oauth2/token")
+     (set post (dict code:(query code:)
+                client_id:(BOX_OAUTH client_id:)
+            client_secret:(BOX_OAUTH client_secret:)
+             redirect_uri:(BOX_OAUTH redirect_uri:)
+               grant_type:"authorization_code"))
+     (set request (NSMutableURLRequest requestWithURL:(NSURL URLWithString:path)))
+     (request setHTTPMethod:"POST")
+     (request setHTTPBody:((post agent_urlQueryString) dataUsingEncoding:NSUTF8StringEncoding))
+     (set responseData
+          (NSURLConnection sendSynchronousRequest:request
+                                returningResponse:(set responsep (NuReference new))
+                                            error:(set errorp (NuReference new))))
+     (set responseString (NSString stringWithData:responseData encoding:NSUTF8StringEncoding))
+     (set responseObject (responseString agent_JSONValue))
+     
+     ;; save session info in database
+     (set mongo (AgentMongoDB new))
+     (mongo connect)
+     (mongo insertObject:responseObject intoCollection:"accounts.responses")
+     (set result (responseObject mutableCopy))
+     
+     (unless (set SESSIONTOKEN ((REQUEST cookies) session:))
+             (set SESSIONTOKEN (nonce))
+             ;; let's set a cookie too
+             (set sessionCookie (AgentCookie cookieWithName:"session" value:SESSIONTOKEN))
+             (RESPONSE setValue:(sessionCookie stringValue) forHTTPHeader:"Set-Cookie"))
+     (result created:(NSDate date) token:SESSIONTOKEN)
+     (set session-id (mongo insertObject:result intoCollection:"accounts.box_sessions"))
+     
+     (redirect "/accounts"))
+
+(post "/accounts/box/signout"
+      (NSLog "SIGNING OUT OF BOX")
+      (if (set token ((REQUEST cookies) session:))
+          (set mongo (AgentMongoDB new))
+          (mongo connect)
+          (mongo removeWithCondition:(dict token:token)
+                      fromCollection:"accounts.box_sessions"))
+      (redirect (or (((REQUEST query) agent_urlQueryDictionary) r:) "/accounts")))
+
+;;;;
+
+(class NSNumber
+ (- map:fn is
+    (set result (array))
+    (self times:(do (i) (result addObject:(fn i))))
+    result))
+
+;;;;
+
+(macro htmlpage (title *body)
+       `(&html class:"no-js" lang:"en"
+               (&head (&meta charset:"utf-8")
+                      (&meta name:"viewport" content:"width=device-width, initial-scale=1.0")
+                      (&meta name:"description" content:"My Agent on the Internet")
+                      (&meta name:"keywords" content:"agent,personal")
+                      (&meta name:"author" content:"Tim Burks")
+                      (&title ,title)
+                      (&link rel:"stylesheet" href:"/accounts/foundation-5/css/foundation.min.css")
+                      (&script src:"/accounts/foundation-5/js/vendor/modernizr.js"))
+               (&body ,@*body
+                      (&div class:"row"
+                            (&div class:"large-12 columns"
+                                  (&hr)
+                                  (&p style:"font-size:80%"
+                                      (&strong "Agent I/O")
+                                      )))
+                      (&script src:"/accounts/foundation-5/js/vendor/jquery.js")
+                      (&script src:"/accounts/foundation-5/js/foundation.min.js")
+                      (&script "$(document).foundation();"))))
+
+(def escape (string)
+     (set string (string stringByReplacingOccurrencesOfString:"&" withString:"&amp;"))
+     (set string (string stringByReplacingOccurrencesOfString:"<" withString:"&lt;"))
+     (set string (string stringByReplacingOccurrencesOfString:">" withString:"&gt;"))
+     (set string (string stringByReplacingOccurrencesOfString:"\"" withString:"&quot;"))
+     string)
+
+(macro topbar ()
+       (unless (defined google_screen_name) (set google_screen_name nil))
+       (unless (defined searchtext) (set searchtext ""))
+       (&div class:"contain-to-grid" style:"margin-bottom:20px;"
+             (&nav class:"top-bar" data-topbar:1
+                   (&ul class:"title-area"
+                        (&li class:"name"
+                             (&h1 (&a href:"/accounts" "Agent I/O Accounts")))
+                        (&li class:"toggle-topbar menu-icon" (&a href:"#" "Menu")))
+                   (&section class:"top-bar-section">
+                             ;;<!-- Right Nav Section -->
+                             (&ul class:"right"
+                                  (&li class:"has-form"
+                                       (&div class:"row collapse"
+                                             (&form action:"/accounts/search"
+                                                    (&div class:"large-12 small-12 columns"
+                                                          (&input type:"text"
+                                                                  name:"terms"
+                                                                 style:"width:100%"
+                                                           placeholder:"Search Agent I/O"
+                                                                 value:(escape searchtext))))))
+                                  (if google_screen_name
+                                      (then (&li class:"has-dropdown"
+                                                 (&a href:"#" google_screen_name)
+                                                 (&ul class:"dropdown"
+                                                      (&li (&a href:"/accounts/google/signout" "Sign out of Google")))))
+                                      (else (&li class:"active" (&a href:"/accounts/google/signin" "Sign in with Google")))))
+                             ;;<!-- Left Nav Section -->
+                             (&ul class:"left"
+                                  (&li (&a href:"/accounts" "a"))
+                                  (&li (&a href:"/accounts" "b"))
+                                  (&li (&a href:"/accounts" "c"))
+                                  )))))
+
+(set RADARS_PER_PAGE 20)
+
+(def pagination-control (currentpage lastpage)
+     (set pagination-margin 4)
+     (set pagination-width (+ (* 2 pagination-margin) 1))
+     (def item-for-page (page current)
+          (&li class:(if (eq current page) (then "current") (else ""))
+               (&a href:(+ "/page/" page) page)))
+     (&ul class:"pagination"
+          (&li class:"arrow" (&a href:"/page/1" "&laquo;"))
+          (cond ((<= currentpage pagination-margin)
+                 (pagination-width map:(do (i) (item-for-page (+ i 1) currentpage))))
+                ((> currentpage (- lastpage pagination-margin))
+                 (pagination-width map:(do (i) (item-for-page (+ i 1 lastpage (- pagination-width)) currentpage))))
+                (else (pagination-width map:(do (i) (item-for-page (+ i currentpage (- pagination-margin)) currentpage)))))
+          (&li class:"arrow" (&a href:(+ "/page/" lastpage) "&raquo;"))))
+
+
+
+
+
+(def strip-time (time)
+     ((time componentsSeparatedByString:".") 0))
+
+(get "/accounts"
+     (authenticate)
+     (htmlpage "Agent I/O"
+               (topbar)
+               (&div class:"row"
+                     (&div class:"large-12 columns panel"
+                           (&h3 "Google")
+                           (if google_screen_name
+                               (then (&p (&form name:"google_signout" action:"/accounts/google/signout" method:"POST"
+                                                (&a href:"#" onclick:"google_signout.submit(); return false;" "Sign out of Google."))
+                                         (table-for-dictionary google_session)
+                                         ))
+                               (else (&p (&a href:"/accounts/google/signin" "Sign in with Google"))))))
+               (&div class:"row"
+                     (&div class:"large-12 columns panel"
+                           (&h3 "Twitter")
+                           (if twitter_session
+                               (then (&p (&form name:"twitter_signout" action:"/accounts/twitter/signout" method:"POST"
+                                                (&a href:"#" onclick:"twitter_signout.submit(); return false;" "Sign out of Twitter."))
+                                         (table-for-dictionary twitter_session)
+                                         ))
+                               (else (&p (&a href:"/accounts/twitter/signin" "Sign in with Twitter"))))))
+               (&div class:"row"
+                     (&div class:"large-12 columns panel"
+                           (&h3 "Dropbox")
+                           (if dropbox_screen_name
+                               (then (&p (&form name:"dropbox_signout" action:"/accounts/dropbox/signout" method:"POST"
+                                                (&a href:"#" onclick:"dropbox_signout.submit(); return false;" "Sign out of Dropbox."))
+                                         (table-for-dictionary dropbox_session)
+                                         ))
+                               (else (&p (&a href:"/accounts/dropbox/signin" "Sign in with Dropbox"))))))
+               (&div class:"row"
+                     (&div class:"large-12 columns panel"
+                           (&h3 "Box")
+                           (if box_screen_name
+                               (then (&p (&form name:"box_signout" action:"/accounts/box/signout" method:"POST"
+                                                (&a href:"#" onclick:"box_signout.submit(); return false;" "Sign out of Box."))
+                                         (table-for-dictionary box_session)
+                                         ))
+                               (else (&p (&a href:"/accounts/box/signin" "Sign in with Box"))))))
+               ))
+
+(get "/accounts/files"
+     (authenticate)
+     (set info "")
+     (if session
+         (set access_token (session access_token:))
+         (set path "https://www.googleapis.com/drive/v2/files")
+         (set URL (NSURL URLWithString:path))
+         (set request (NSMutableURLRequest requestWithURL:URL))
+         (request setValue:"Bearer #{access_token}" forHTTPHeaderField:"Authorization")
+         (set responseData
+              (NSURLConnection sendSynchronousRequest:request
+                                    returningResponse:(set responsep (NuReference new))
+                                                error:(set errorp (NuReference new))))
+         (if responseData
+             (then (set info ((NSString alloc) initWithData:responseData encoding:NSUTF8StringEncoding)))
+             (else (set info ((errorp value) description)))))
+     (htmlpage "Agent I/O"
+               (topbar)
+               (&div class:"row"
+                     (&div class:"large-9 medium-10 small-12 columns"
+                           (&h3 "Something")
+                           (&pre (+ "**" (session description) "**"))
+                           (&pre (+ "|" info "|"))
+                           
+                           (&div "ok")))))
+
+(get "/accounts/google"
+     (authenticate)
+     (set info "")
+     (if session
+         (set access_token (session access_token:))
+         (set path "https://www.googleapis.com/drive/v2/about")
+         (set URL (NSURL URLWithString:path))
+         (set request (NSMutableURLRequest requestWithURL:URL))
+         (request setValue:"Bearer #{access_token}" forHTTPHeaderField:"Authorization")
+         (set responseData
+              (NSURLConnection sendSynchronousRequest:request
+                                    returningResponse:(set responsep (NuReference new))
+                                                error:(set errorp (NuReference new))))
+         (if responseData
+             (then (set info ((NSString alloc) initWithData:responseData encoding:NSUTF8StringEncoding)))
+             (else (set info ((errorp value) description)))))
+     
+     (if google_screen_name
+         (set mongo (AgentMongoDB new))
+         (mongo connect)
+         (set google_sessions (mongo findArray:nil inCollection:"accounts.google_sessions")))
+     (htmlpage "Agent I/O"
+               (topbar)
+               (&div class:"row"
+                     (&div class:"large-9 medium-10 small-12 columns"
+                           
+                           (&h3 "Google")
+                           (&p (google_sessions count))
+                           (google_sessions map:(do (session) (&div (table-for-dictionary session))))
+                           (&h3 "Something")
+                           (&pre (+ "**" (session description) "**"))
+                           (&pre (+ "|" info "|"))
+                           
+                           ))))
+
+
+
+
+(get "/accounts/dropbox"
+     (authenticate)
+     (set info "")
+     (if dropbox_session
+         (set access_token (dropbox_session access_token:))
+         (set path "https://api.dropbox.com/1/account/info")
+         
+         (set URL (NSURL URLWithString:path))
+         (set request (NSMutableURLRequest requestWithURL:URL))
+         (request setValue:"Bearer #{access_token}" forHTTPHeaderField:"Authorization")
+         (set responseData
+              (NSURLConnection sendSynchronousRequest:request
+                                    returningResponse:(set responsep (NuReference new))
+                                                error:(set errorp (NuReference new))))
+         (if responseData
+             (then (set info ((NSString alloc) initWithData:responseData encoding:NSUTF8StringEncoding)))
+             (else (set info ((errorp value) description)))))
+     
+     (if dropbox_session
+         (set info (info agent_JSONValue))
+         (set mongo (AgentMongoDB new))
+         (mongo connect)
+         (set dropbox_sessions (mongo findArray:nil inCollection:"accounts.dropbox_sessions")))
+     (htmlpage "Agent I/O"
+               (topbar)
+               (&div class:"row"
+                     (&div class:"large-9 medium-10 small-12 columns"
+                           
+                           (&h3 "Dropbox")
+                           (&div (table-for-dictionary info))
+                           (&p (dropbox_sessions count))
+                           (dropbox_sessions map:(do (session) (&div (table-for-dictionary session))))
+                           (&h3 "Something")
+                           (&pre (+ "**" (dropbox_session description) "**"))
+                           
+                           ))))
+
+;; https://api.box.com/2.0/folders/0
+
+
+(get "/accounts/box"
+     (authenticate)
+     (set info "")
+     (if box_session
+         (set access_token (box_session access_token:))
+         (set path "https://api.box.com/2.0/folders/0")
+         
+         (set URL (NSURL URLWithString:path))
+         (set request (NSMutableURLRequest requestWithURL:URL))
+         (request setValue:"Bearer #{access_token}" forHTTPHeaderField:"Authorization")
+         (set responseData
+              (NSURLConnection sendSynchronousRequest:request
+                                    returningResponse:(set responsep (NuReference new))
+                                                error:(set errorp (NuReference new))))
+         (if responseData
+             (then (set info ((NSString alloc) initWithData:responseData encoding:NSUTF8StringEncoding)))
+             (else (set info ((errorp value) description)))))
+     
+     (if box_session
+         (set info (info agent_JSONValue))
+         (set mongo (AgentMongoDB new))
+         (mongo connect)
+         (set box_sessions (mongo findArray:nil inCollection:"accounts.box_sessions")))
+     (htmlpage "Agent I/O"
+               (topbar)
+               (&div class:"row"
+                     (&div class:"large-9 medium-10 small-12 columns"
+                           
+                           (&h3 "Box")
+                           (&div (table-for-dictionary info))
+                           (&p (box_sessions count))
+                           (box_sessions map:(do (session) (&div (table-for-dictionary session))))
+                           (&h3 "Something")
+                           (&pre (+ "**" (box_session description) "**"))
+                           
+                           ))))
+
+(def row-of-one (item1)
+     (&div class:"row" (&div class:"large-12 small-12 columns" item1)))
+
+(def row-of-two (item1 item2)
+     (&div class:"row" (&div class:"large-6 small-6 columns" item1) (&div class:"large-6 small-6 columns" item2)))
+
+
+
+
+(def value-for-entry (entry)
+     (if (entry isKindOfClass:NSDictionary)
+         (then (table-for-dictionary entry))
+         (else (entry stringValue))))
+
+(def table-for-dictionary (dictionary)
+     (set keys ((dictionary allKeys) sort))
+     (&table style:"width:100%; table-layout: fixed;"
+             (&tbody
+                    (keys map:
+                          (do (key)
+                              (&tr (&td style:"width:15%; word-wrap:break-word; font-size:80%" key)
+                                   (&td style:"width:85%; word-wrap:break-word; font-size:80%"
+                                        (value-for-entry (dictionary objectForKey:key)))))))))
+
+(files "/accounts/*path:" "public")
+
+(get "/*path:"
+     (authenticate)
+     (RESPONSE setStatus:404)
+     (htmlpage "Not found"
+               (topbar)
+               (&div class:"row"
+                     (&div class:"large-12 columns"
+                           (&h3 "404 Resource Not Found")
+                           (&p "You wanted: #{*path}")
+                           (&p "Sorry.")))))
+
+(AgentHTTPServer run)
+
