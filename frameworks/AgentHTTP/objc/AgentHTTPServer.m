@@ -17,9 +17,9 @@
 
 + (void) load
 {
-    NSLog(@"LOADING");
+    NSBundle *framework = [NSBundle frameworkWithName:@"AgentHTTP"];
     NSMutableDictionary *mainContext = [[Nu sharedParser] context];
-    [[NSBundle bundleForClass:self] loadNuFile:@"macros" withContext:mainContext];
+    [framework loadNuFile:@"macros" withContext:mainContext];
 }
 
 - (id)initWithService:(AgentHTTPService *) service
