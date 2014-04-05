@@ -508,8 +508,8 @@
                       (&meta name:"keywords" content:"agent,personal")
                       (&meta name:"author" content:"Tim Burks")
                       (&title ,title)
-                      (&link rel:"stylesheet" href:"/accounts/foundation-5/css/foundation.min.css")
-                      (&script src:"/accounts/foundation-5/js/vendor/modernizr.js"))
+                      (&link rel:"stylesheet" href:"/foundation-5/css/foundation.min.css")
+                      (&script src:"/foundation-5/js/vendor/modernizr.js"))
                (&body ,@*body
                       (&div class:"row"
                             (&div class:"large-12 columns"
@@ -517,8 +517,8 @@
                                   (&p style:"font-size:80%"
                                       (&strong "Agent I/O")
                                       )))
-                      (&script src:"/accounts/foundation-5/js/vendor/jquery.js")
-                      (&script src:"/accounts/foundation-5/js/foundation.min.js")
+                      (&script src:"/foundation-5/js/vendor/jquery.js")
+                      (&script src:"/foundation-5/js/foundation.min.js")
                       (&script "$(document).foundation();"))))
 
 (def escape (string)
