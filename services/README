@@ -1,0 +1,9 @@
+
+Agent I/O CONTROL
+
+A portable container for networked applications.
+
+On Linux (Ubuntu), CONTROL must be installed at /home/control.
+This is performed automatically by the Ubuntu.sh setup script.
+
+
