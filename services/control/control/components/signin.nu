@@ -63,11 +63,11 @@
 
 (function create-cookie (name)
           (dict name:name
-               value:((RadUUID new) stringValue)
+               value:((AgentUUID new) stringValue)
           expiration:(NSDate dateWithTimeIntervalSinceNow:(* 24 3600 10))))
 
 (function display-cookie (cookie)
-          (+ "" (cookie name:) "=" (cookie value:) "; path=\/control\/; expires=" ((cookie expiration:) rfc1123) ";"))
+          (+ "" (cookie name:) "=" (cookie value:) "; path=\/control\/; expires=" ((cookie expiration:) agent_rfc1123String) ";"))
 
 (macro get-user (name)
        `(cond ((eq nil (set cookie ((REQUEST cookies) ,name))) nil)

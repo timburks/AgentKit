@@ -6,7 +6,7 @@
 ;;
 ;; run mongod with --auth option
 
-(set mongo (RadMongoDB new))
+(set mongo (AgentMongoDB new))
 
 ;; below see the MongoHQ configuration
 ;; username: timburks password: mongohqtim
@@ -28,7 +28,7 @@
 ;(mongo authenticateUser:"agentbox" withPassword:"xme" forDatabase:SITE)
 
 (function oid (string)
-     ((RadBSONObjectID alloc) initWithString:string))
+     ((AgentBSONObjectID alloc) initWithString:string))
 
 (function set-property (key value)
      (mongo updateObject:(dict _id:key value:value)

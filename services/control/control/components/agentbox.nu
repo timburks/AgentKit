@@ -11,7 +11,7 @@
           (puts "creating user")
           (set user (dict username:username
                           password:(password md5HashWithSalt:PASSWORD_SALT)
-                            secret:((RadUUID new) stringValue)))
+                            secret:((AgentUUID new) stringValue)))
           (mongo updateObject:user
                  inCollection:(+ SITE ".users")
                 withCondition:(dict username:username)
@@ -23,7 +23,7 @@
           (mongo insertObject:app intoCollection:(+ SITE ".apps")))
 
 (function add-version (app appfile-name appfile-data)
-          (set version ((RadUUID new) stringValue))
+          (set version ((AgentUUID new) stringValue))
           (mongo writeData:appfile-data
                      named:version
               withMIMEType:"application/zip"
@@ -79,7 +79,7 @@
                             (set worker-count 1))
                     ((worker-count) times:
                      (do (i)
-                         (set container ((RadUUID new) stringValue))
+                         (set container ((AgentUUID new) stringValue))
                          (set path (+ CONTROL-PATH "/workers/" container))
                          (puts "Creating directory at path " path)
                          (set result

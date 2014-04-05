@@ -12,5 +12,5 @@
 (class NSString
  (- (id) md5HashWithSalt:(id) salt is
     (((self dataUsingEncoding:NSUTF8StringEncoding)
-      hmacMd5DataWithKey:(salt dataUsingEncoding:NSUTF8StringEncoding))
-     hexEncodedString)))
+      agent_hmacMd5DataWithKey:(salt dataUsingEncoding:NSUTF8StringEncoding))
+     agent_hexEncodedString)))
