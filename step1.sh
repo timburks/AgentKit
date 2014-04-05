@@ -69,10 +69,6 @@ cd ..
 sudo apt-get install libdispatch-dev -y
 
 git clone https://github.com/timburks/nu.git
-git clone https://github.com/timburks/RadHTTP.git
-git clone https://github.com/timburks/RadCrypto.git
-git clone https://github.com/timburks/RadMongoDB.git
-git clone https://github.com/timburks/RadJSON.git
 
 cd nu
 git checkout gnustep-libobjc2
@@ -80,56 +76,42 @@ make
 ./mininush tools/nuke install
 cd ..
 
-sudo apt-get install libevent-dev -y
-cd RadHTTP
-nuke
-nuke install
+
+sudo apt-get install libdispatch-dev -y
+
+git clone https://github.com/timburks/nu.git
+
+cd nu
+git checkout master
+make
+./mininush tools/nuke install
 cd ..
 
+sudo apt-get install libevent-dev -y
 sudo apt-get install uuid-dev -y
 sudo apt-get install libssl-dev -y
-cd RadCrypto
-nuke
+sudo apt-get install cmake -y
+
+git clone https://github.com/timburks/libevhtp
+cd libevhtp/build
+cmake ..
+make
+make install
+cd ../..
+
+git clone https://github.com/timburks/AgentKit.git
+
+cd AgentKit/frameworks/AgentHTTP
 nuke install
-cd ..
-
-cd RadMongoDB
-nuke
+cd ../AgentJSON
 nuke install
-cd ..
-
-cd RadJSON
-nuke
+cd ../AgentXML
 nuke install
-cd ..
+cd ../AgentCrypto
+nuke install
+cd ../AgentMongoDB
+nuke install
+cd ../..
 
-#### AGENT I/O INSTALLATION FOLLOWS
 
-sudo apt-get install nginx -y
-sudo apt-get install mongodb -y
-sudo apt-get install unzip -y
-
-sudo adduser --system -disabled-login control 
-sudo addgroup control
-
-# replace /home/control with the AgentBox repository
-# to expose the AgentBox git repo, run this on xmachine.net:
-# % sudo -u git git daemon --base-path=/Users/git/repositories
-git clone git://xmachine.net/AgentBox.git
-sudo rm -rf /home/control
-sudo mv AgentBox /home/control
-
-cd /home/control
-sudo mkdir -p nginx/logs
-sudo mkdir -p var
-sudo mkdir -p workers
-
-cd /home/control/control
-sudo nush tools/setup.nu
-sudo /usr/sbin/nginx -s reload
-cd ..
-
-sudo cp upstart/agentio-control.conf /etc/init
-sudo chown -R control /home/control
-sudo initctl start agentio-control
 
