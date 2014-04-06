@@ -23,27 +23,39 @@
                (RESPONSE setValue:,location forHTTPHeader:"Location")
                "redirecting"))
 
+(set PASSWORD_SALT "agent.io")
+(class NSString
+ (- (id) md5HashWithSalt:(id) salt is
+    (((self dataUsingEncoding:NSUTF8StringEncoding)
+      agent_hmacMd5DataWithKey:(salt dataUsingEncoding:NSUTF8StringEncoding))
+     agent_hexEncodedString)))
+
+
 (class NSNumber
  (- map:fn is
     (set result (array))
     (self times:(do (i) (result addObject:(fn i))))
     result))
 
-(macro get-sessions-for-visitor (REQUEST)
-       `(progn (set SESSIONS (array))
+(macro get-user (REQUEST)
+       `(progn (set screen_name nil)
+               (set session nil)
                (if (set token ((,REQUEST cookies) session:))
-                   (then (set mongo (AgentMongoDB new))
-                         (mongo connect)
-                         (set SESSIONS (mongo findArray:(dict token:token) inCollection:"accounts.sessions"))))
-               SESSIONS))
+                   (set mongo (AgentMongoDB new))
+                   (mongo connect)
+                   (set session (mongo findOne:(dict token:token) inCollection:"accounts.sessions"))
+                   (set screen_name (session username:)))
+               session))
+
+(set ADMIN "tim")
 
 (macro administrator-is-logged-in (REQUEST)
-       `(progn (unless (and (defined google_screen_name) google_screen_name)
-                       (get-sessions-for-visitor ,REQUEST))
-               (and google_screen_name (eq google_screen_name ADMIN))))
+       `(progn (unless (and (defined screen_name) screen_name)
+                       (get-user ,REQUEST))
+               (and screen_name (eq screen_name ADMIN))))
 
 (macro authenticate ()
-       '(progn (get-sessions-for-visitor REQUEST)))
+       '(progn (get-user REQUEST)))
 
 ;; A class for managing user-identifying cookies.
 (class AgentHTTPCookie is NSObject
@@ -97,12 +109,49 @@
                                                     (&tr (&td)
                                                          (&td (&button type:"submit" "&nbsp;Sign in&nbsp;"))))))))))
 
+
+(macro adduser-form ()
+       `(progn (htmlpage "Add User"
+                         (&div class:"row"
+                               (&div class:"large-3 columns" (&p))
+                               (&div class:"large-9 columns"
+                                     (&div class:"hero-unit"
+                                           (&h2 message)
+                                           (&form id:"email-form" method:"post" action:"/accounts/adduser"
+                                                  (&table (&tr (&td (&label for:"username" "Username "
+                                                                          style:"margin-right:2em"))
+                                                               (&td (&input id:"username"
+                                                                          type:"text"
+                                                                          name:"username"
+                                                                         title:"username"
+                                                                         width:20 )))
+                                                          (&tr (&td (&label for:"password" "Password "
+                                                                          style:"margin-right:2em"))
+                                                               (&td (&input id:"password"
+                                                                          type:"password"
+                                                                          name:"password"
+                                                                         title:"password"
+                                                                         width:20)))
+                                                          (&tr (&td (&label for:"password2" "Password (again) "
+                                                                          style:"margin-right:2em"))
+                                                               (&td (&input id:"password2"
+                                                                          type:"password"
+                                                                          name:"password2"
+                                                                         title:"password"
+                                                                         width:20)))
+                                                          (&tr (&td)
+                                                               (&td (&button type:"submit" "&nbsp;Add user&nbsp;")))))))))))
 (get "/accounts/signin"
      (REQUEST setContentType:"text/html")
      (set username "")
      (set password "")
      (set message "Please sign in.")
      (signin-form))
+
+(get "/accounts/adduser"
+     (REQUEST setContentType:"text/html")
+     (set message "Please create a user.")
+     (adduser-form))
 
 (set PASSWORD_SALT "123")
 
@@ -116,14 +165,17 @@
       (puts ((REQUEST post) description))
       (cond ((or (not username) (not password))
              (set message "Missing username or password. Try that again.")
-             (eval signin-form))
+             (signin-form))
             ((set account (mongo findOne:(dict username:username
                                                password:(password md5HashWithSalt:PASSWORD_SALT))
                             inCollection:"accounts.users"))
-             (set session-cookie (create-cookie SITE))
-             (puts "setting cookie: #{(display-cookie session-cookie)}")
-             (RESPONSE setValue:(display-cookie session-cookie) forHTTPHeader:"Set-Cookie")
-             (set session (dict account_id:(account _id:) cookie:(session-cookie value:)))
+             
+             (unless (set SESSIONTOKEN ((REQUEST cookies) session:))
+                     (set SESSIONTOKEN (nonce))
+                     (set sessionCookie (AgentHTTPCookie cookieWithName:"session" value:SESSIONTOKEN))
+                     (RESPONSE setValue:(sessionCookie stringValue) forHTTPHeader:"Set-Cookie"))
+             
+             (set session (dict account_id:(account _id:) username:username token:SESSIONTOKEN))
              (puts "MATCH")
              (mongo updateObject:session
                     inCollection:"accounts.sessions"
@@ -132,7 +184,67 @@
            updateMultipleEntries:NO)
              (RESPONSE redirectResponseToLocation:"/accounts"))
             (else (set message "Password mismatch. Try that again.")
-                  (eval signin-form))))
+                  (signin-form))))
+
+(post "/accounts/adduser"
+      (set ip-address ((REQUEST headers) X-Forwarded-For:))
+      (set username ((REQUEST post) username:))
+      (set password ((REQUEST post) password:))
+      (set confirmation ((REQUEST post) password2:))
+      
+      (cond ((or (not username) (eq (username length) 0))
+             (set message "Please specify a username.")
+             (adduser-form))
+            ((or (not password) (< (password length) 4))
+             (set message "Passwords must be at least 4 characters.")
+             (adduser-form))
+            ((!= password confirmation)
+             (set message "Password and password confirmation entries must match.")
+             (adduser-form))
+            (else ;; create the account
+                  (set account (create-user username password))
+                  (puts "account created")
+                  
+                  (unless (set SESSIONTOKEN ((REQUEST cookies) session:))
+                          (set SESSIONTOKEN (nonce))
+                          (set sessionCookie (AgentHTTPCookie cookieWithName:"session" value:SESSIONTOKEN))
+                          (RESPONSE setValue:(sessionCookie stringValue) forHTTPHeader:"Set-Cookie"))
+                  
+                  (set session (dict account_id:(account _id:) username:username token:SESSIONTOKEN))
+                  (puts "session created")
+                  (set mongo (AgentMongoDB new))
+                  (mongo connect)
+                  (mongo updateObject:session
+                         inCollection:"accounts.sessions"
+                        withCondition:(dict account_id:(account _id:))
+                    insertIfNecessary:YES
+                updateMultipleEntries:NO)
+                  (puts "session saved")
+                  (RESPONSE redirectResponseToLocation:"/accounts"))))
+
+(def lookup-user (username password)
+     (puts "lookup-user")
+     (set mongo (AgentMongoDB new))
+     (mongo connect)
+     (mongo findOne:(dict username:username) inCollection:"accounts.users"))
+
+(def create-user (username password)
+     (puts (+ "create-user" username password))
+     (if (set user (lookup-user username password))
+         (puts "user exists")
+         (return nil))
+     (puts "creating user")
+     (set user (dict username:username
+                     password:(password md5HashWithSalt:PASSWORD_SALT)
+                       secret:((AgentUUID new) stringValue)))
+     (set mongo (AgentMongoDB new))
+     (mongo connect)
+     (mongo updateObject:user
+            inCollection:"accounts.users"
+           withCondition:(dict username:username)
+       insertIfNecessary:YES
+   updateMultipleEntries:NO)
+     (mongo findOne:(dict username:username) inCollection:"accounts.users"))
 
 ;;;;; Twitter-based signin
 
@@ -186,7 +298,10 @@
      (set result (s agent_urlQueryDictionary))
      result)
 
-(get "/accounts/twitter/signin"
+(get "/accounts/twitter/connect"
+     (authenticate)
+     (unless screen_name (return nil))
+     
      (set serviceinfo (SERVICES find:(do (s) (eq (s vendor:) "twitter"))))
      (set mongo (AgentMongoDB new))
      (mongo connect)
@@ -215,6 +330,9 @@
      (redirect url))
 
 (get "/accounts/twitter/callback"
+     (authenticate)
+     (unless screen_name (return nil))
+     
      (set serviceinfo (SERVICES find:(do (s) (eq (s vendor:) "twitter"))))
      (set mongo (AgentMongoDB new))
      (mongo connect)
@@ -255,16 +373,11 @@
      (set SECRET (+ (serviceinfo oauth_consumer_secret:) "&" TOKEN_SECRET))
      (NSLog (result description))
      
-     (unless (set SESSIONTOKEN ((REQUEST cookies) session:))
-             (set SESSIONTOKEN (nonce))
-             ;; let's set a cookie too
-             (set sessionCookie (AgentHTTPCookie cookieWithName:"session" value:SESSIONTOKEN))
-             (RESPONSE setValue:(sessionCookie stringValue) forHTTPHeader:"Set-Cookie"))
-     ;; save session info in database
-     (result created:(NSDate date) token:SESSIONTOKEN)
+     ;; save connection info in database
+     (result created:(NSDate date) account_id:(session account_id:))
      (result provider:"twitter")
      (result _username:(result screen_name:))
-     (mongo insertObject:result intoCollection:"accounts.sessions")
+     (mongo insertObject:result intoCollection:"accounts.connections")
      
      (redirect (or returnAddress "/accounts")))
 
@@ -275,7 +388,7 @@
      (authenticate)
      (set mongo (AgentMongoDB new))
      (mongo connect)
-     (set sessions (mongo findArray:(dict provider:"google") inCollection:"accounts.sessions"))
+     (set sessions (mongo findArray:(dict provider:"google") inCollection:"accounts.connections"))
      (sessions each:
                (do (session)
                    (set id_token (session id_token:))
@@ -292,7 +405,7 @@
                    (session user:object)
                    (session _username:((session user:) email:))
                    (mongo updateObject:session
-                          inCollection:"accounts.sessions"
+                          inCollection:"accounts.connections"
                          withCondition:(dict _id:(session _id:))
                      insertIfNecessary:NO
                  updateMultipleEntries:NO)))
@@ -300,7 +413,10 @@
 
 ;; GENERIC OAuth2
 
-(get "/accounts/service:/signin"
+(get "/accounts/service:/connect"
+     (authenticate)
+     (unless screen_name (return nil))
+     
      (set serviceinfo (SERVICES find:(do (s) (eq (s vendor:) service))))
      (set token (nonce))
      (set query (dict client_id:(serviceinfo client_id:)
@@ -312,6 +428,9 @@
      (redirect path))
 
 (get "/accounts/service:/oauth2callback"
+     (authenticate)
+     (unless screen_name (return nil))
+     
      (set serviceinfo (SERVICES find:(do (s) (eq (s vendor:) service))))
      (NSLog "#{service} CALLBACK")
      (set query ((REQUEST query) agent_urlQueryDictionary))
@@ -344,22 +463,14 @@
          (then (set responseObject (responseString agent_JSONValue)))
          (else (set responseObject (responseString agent_urlQueryDictionary))))
      
-     ;; save session info in database
+     ;; save connection info in database
      (set mongo (AgentMongoDB new))
      (mongo connect)
-     (mongo insertObject:responseObject intoCollection:"accounts.responses")
      (set result (responseObject mutableCopy))
-     
-     (unless (set SESSIONTOKEN ((REQUEST cookies) session:))
-             (set SESSIONTOKEN (nonce))
-             ;; let's set a cookie too
-             (set sessionCookie (AgentHTTPCookie cookieWithName:"session" value:SESSIONTOKEN))
-             (RESPONSE setValue:(sessionCookie stringValue) forHTTPHeader:"Set-Cookie"))
-     
-     (result created:(NSDate date) token:SESSIONTOKEN)
+     (result created:(NSDate date) account_id:(session account_id:))
      (result provider:service)
      (result _username:(result description))
-     (mongo insertObject:result intoCollection:"accounts.sessions")
+     (mongo insertObject:result intoCollection:"accounts.connections")
      (redirect "/accounts"))
 
 (macro htmlpage (title *body)
@@ -390,8 +501,25 @@
      (set string (string stringByReplacingOccurrencesOfString:"\"" withString:"&quot;"))
      string)
 
+
+(def postit (path arguments)
+     (set command (+ "var form = document.createElement('form');"
+                     "form.setAttribute('method', 'POST');"
+                     "form.setAttribute('action', '" path "');"))
+     (arguments each:
+                (do (key value)
+                    (command appendString:(+ "var field = document.createElement('input');"
+                                             "field.setAttribute('name', '" key "');"
+                                             "field.setAttribute('value', '" value "');"
+                                             "form.appendChild(field);"))))
+     (command appendString:"form.submit();")
+     (command appendString:"return false;")
+     command)
+
+
+
 (macro topbar ()
-       (unless (defined google_screen_name) (set google_screen_name nil))
+       (unless (defined screen_name) (set screen_name nil))
        (unless (defined searchtext) (set searchtext ""))
        (set mongo (AgentMongoDB new))
        (mongo connect)
@@ -416,61 +544,56 @@
                                                                  style:"width:100%"
                                                            placeholder:"Search Agent I/O"
                                                                  value:(escape searchtext))))))
-                                  (if google_screen_name
-                                      (then (&li class:"has-dropdown"
-                                                 (&a href:"#" google_screen_name)
-                                                 (&ul class:"dropdown"
-                                                      (&li (&a href:"/accounts/google/signout" "Sign out of Google")))))
-                                      (else (&li class:"active" (&a href:"/accounts/google/signin" "Sign in with Google")))))
+                                  (if screen_name
+                                      (then (&li class:"active" (&a href:"#" "Sign out" onclick:(postit "/accounts/signout" nil))))
+                                      (else (&li class:"active" (&a href:"/accounts/signin" "Sign in")))))
                              ;;<!-- Left Nav Section -->
                              (&ul class:"left"
-                                  (&li class:"has-dropdown"
-                                       (&a href:"/accounts" "sign in with...")
-                                       (&ul class:"dropdown"
-                                            (account_services map:(do (service)
-                                                                      (&li (&a href:(+ "/accounts/" (service vendor:) "/signin")
-                                                                               (service vendor:)))))
-                                            ;(&li (&a href:"/accounts/google/signin" "Google"))
-                                            ;(&li (&a href:"/accounts/twitter/signin" "Twitter"))
-                                            ;(&li (&a href:"/accounts/dropbox/signin" "Dropbox"))
-                                            ;(&li (&a href:"/accounts/box/signin" "Box"))
-                                            ;(&li (&a href:"/accounts/meetup/signin" "Meetup"))
-                                            ;(&li (&a href:"/accounts/facebook/signin" "Facebook"))
-                                            ;(&li (&a href:"/accounts/github/signin" "GitHub"))
-                                            ;(&li (&a href:"/accounts/eventbrite/signin" "Eventbrite"))
-                                            ;(&li (&a href:"/accounts/linkedin/signin" "LinkedIn"))
-                                            ))
-                                  (&li (&a href:"/accounts" "more"))
+                                  (if screen_name (&li (&a href:"#" screen_name)))
+                                  (if screen_name (&li class:"has-dropdown"
+                                                       (&a href:"/accounts" "connect to...")
+                                                       (&ul class:"dropdown"
+                                                            (account_services map:(do (service)
+                                                                                      (&li (&a href:(+ "/accounts/" (service vendor:) "/connect")
+                                                                                               (service vendor:))))))))
                                   )))))
+
+(post "/accounts/disconnect"
+      (authenticate)
+      (set connectionid ((REQUEST post) id:))
+      (if connectionid
+          (set mongo (AgentMongoDB new))
+          (mongo connect)
+          (mongo removeWithCondition:(dict _id:(oid connectionid)) fromCollection:"accounts.connections"))
+      (redirect "/accounts"))
 
 (post "/accounts/signout"
       (authenticate)
-      (set sessionid (oid ((REQUEST post) id:)))
-      (if sessionid
-          (set mongo (AgentMongoDB new))
-          (mongo connect)
-          (mongo removeWithCondition:(dict _id:sessionid) fromCollection:"accounts.sessions"))
+      (set mongo (AgentMongoDB new))
+      (mongo connect)
+      (mongo removeWithCondition:(dict username:screen_name) fromCollection:"accounts.sessions")
       (redirect "/accounts"))
 
 (get "/accounts"
      (authenticate)
+     (set mongo (AgentMongoDB new))
+     (mongo connect)
+     (if session
+         (then (set connections (mongo findArray:(dict account_id:(session account_id:)) inCollection:"accounts.connections")))
+         (else (set connections (array))))
      (htmlpage "Agent I/O"
                (topbar)
                (&div class:"row"
                      (&div class:"large-12 columns"
-                           (&table (&thead (&th) (&th "provider") (&th "username"))
-                                   (&tbody (SESSIONS map:
-                                                     (do (session)
-                                                         (&tr (&td (&form name:"signout"
-                                                                        action:"/accounts/signout"
-                                                                        method:"POST"
-                                                                          (&input type:"submit" value:"Sign out")
-                                                                          (&input type:"hidden"
-                                                                                  name:"id"
-                                                                              provider:(session provider:)
-                                                                                 value:(session _id:))))
-                                                              (&td (session provider:))
-                                                              (&td (session _username:)))))))))))
+                           (if (connections count)
+                               (&table (&thead (&th) (&th "provider") (&th "username"))
+                                       (&tbody (connections map:
+                                                            (do (connection)
+                                                                (&tr (&td (&a href:"#" "Disconnect" onclick:(postit "/accounts/disconnect"
+                                                                                                                    (dict id:(connection _id:)))))
+                                                                     (&td (connection provider:))
+                                                                     (&td (connection description))))))))))))
+
 
 
 (get "/accounts/google/files"
