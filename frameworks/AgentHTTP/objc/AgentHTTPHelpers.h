@@ -27,3 +27,8 @@
 + (id) agent_dataWithHexEncodedString:(NSString *) string;
 @end
 
+@interface NSDate (AgentHTTPHelpers)
+- (NSString *) agent_rfc822String;
+- (NSString *) agent_rfc1123String;
+- (NSString *) agent_rfc3339String;
+@end

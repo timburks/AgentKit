@@ -33,3 +33,7 @@
 - (NSData *) agent_aesEncryptedDataWithPassword:(NSString *) password salt:(NSString *) salt;
 - (NSData *) agent_aesDecryptedDataWithPassword:(NSString *) password salt:(NSString *) salt;
 @end
+
+@interface NSString (AgentCrypto)
+- (NSString *) agent_md5HashWithSalt:(NSString *) salt;
+@end

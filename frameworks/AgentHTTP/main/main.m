@@ -55,8 +55,6 @@ int main (int argc, const char *argv[])
             return response;
             
         }];
-         
-    
         
        [service addHandlerWithHTTPMethod:@"HEAD" path:@"/*path:" block:
          ^(AgentHTTPRequest *request) {
@@ -74,6 +72,14 @@ int main (int argc, const char *argv[])
              NSLog(@"hit");
              //usleep(100000);
              //sleep(3);
+             return response;
+         }];
+        
+        [service addHandlerWithHTTPMethod:@"GET" path:@"/exit" block:
+         ^(AgentHTTPRequest *request) {
+             AgentHTTPResponse *response = [[AgentHTTPResponse alloc] init];
+             response.body = [@"exiting" dataUsingEncoding:NSUTF8StringEncoding];
+             response.exit = YES;
              return response;
          }];
         
@@ -96,7 +102,7 @@ int main (int argc, const char *argv[])
              unsigned char result[CC_MD5_DIGEST_LENGTH];
              CC_MD5([request.body bytes], (CC_LONG) [request.body length], result);
              NSData *hashData = [NSData dataWithBytes:result length:CC_MD5_DIGEST_LENGTH];
-             NSString *hashString = [hashData hexEncodedString];
+             NSString *hashString = [hashData agent_hexEncodedString];
              [data writeToFile:[cacheDirectory stringByAppendingPathComponent:hashString] atomically:NO];
              AgentHTTPResponse *response = [[AgentHTTPResponse alloc] init];
              response.body = [hashString dataUsingEncoding:NSUTF8StringEncoding];
@@ -144,7 +150,6 @@ int main (int argc, const char *argv[])
         AgentLibEVHTPServer *server = [[AgentLibEVHTPServer alloc] initWithService:service];
         [server setVerbose:YES];
         [server start];
-        [[NSRunLoop mainRunLoop] run];
     }
     return 0;
 }

@@ -3,6 +3,8 @@
 
 (get "/" "Hi there")
 
+(get "/exit" (RESPONSE setExit:1) "bye!")
+
 (get "/ps"
      (RESPONSE setValue:"text/plain" forHTTPHeader:"Content-Type")
      (NSString stringWithShellCommand:"ps uax"))

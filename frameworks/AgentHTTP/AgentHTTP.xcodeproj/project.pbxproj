@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		2203867F18D6BB330091A43B /* AgentLibEVHTPServer.m in Sources */ = {isa = PBXBuildFile; fileRef = 2203867E18D6BB330091A43B /* AgentLibEVHTPServer.m */; };
+		22B5502D18F2650B00A13F28 /* Nu.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 22B5502C18F2650B00A13F28 /* Nu.framework */; };
+		22B5503018F26ADF00A13F28 /* AgentHTTPCookie.m in Sources */ = {isa = PBXBuildFile; fileRef = 22B5502F18F26ADF00A13F28 /* AgentHTTPCookie.m */; };
 		22E9FD351745F55500FE9B01 /* AgentHTTPService.m in Sources */ = {isa = PBXBuildFile; fileRef = 22E9FD341745F55500FE9B01 /* AgentHTTPService.m */; };
 		22FF922E174592DB00ADC59E /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 22FF922D174592DB00ADC59E /* Foundation.framework */; };
 		22FF92501745939E00ADC59E /* AgentCocoaHTTPServer.m in Sources */ = {isa = PBXBuildFile; fileRef = 22FF923F1745939E00ADC59E /* AgentCocoaHTTPServer.m */; };
@@ -38,6 +40,9 @@
 /* Begin PBXFileReference section */
 		2203867D18D6BB330091A43B /* AgentLibEVHTPServer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = AgentLibEVHTPServer.h; sourceTree = "<group>"; };
 		2203867E18D6BB330091A43B /* AgentLibEVHTPServer.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = AgentLibEVHTPServer.m; sourceTree = "<group>"; };
+		22B5502C18F2650B00A13F28 /* Nu.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Nu.framework; path = ../../../../../../Library/Frameworks/Nu.framework; sourceTree = "<group>"; };
+		22B5502E18F26ADF00A13F28 /* AgentHTTPCookie.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = AgentHTTPCookie.h; sourceTree = "<group>"; };
+		22B5502F18F26ADF00A13F28 /* AgentHTTPCookie.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = AgentHTTPCookie.m; sourceTree = "<group>"; };
 		22E9FD331745F55500FE9B01 /* AgentHTTPService.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = AgentHTTPService.h; sourceTree = "<group>"; };
 		22E9FD341745F55500FE9B01 /* AgentHTTPService.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = AgentHTTPService.m; sourceTree = "<group>"; };
 		22FF922A174592DB00ADC59E /* AgentHTTP */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = AgentHTTP; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -69,6 +74,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				22B5502D18F2650B00A13F28 /* Nu.framework in Frameworks */,
 				22FF925E1745946300ADC59E /* libevent.dylib in Frameworks */,
 				22FF925C1745945200ADC59E /* CoreServices.framework in Frameworks */,
 				22FF922E174592DB00ADC59E /* Foundation.framework in Frameworks */,
@@ -100,6 +106,7 @@
 		22FF922C174592DB00ADC59E /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				22B5502C18F2650B00A13F28 /* Nu.framework */,
 				22FF922D174592DB00ADC59E /* Foundation.framework */,
 			);
 			name = Frameworks;
@@ -118,6 +125,8 @@
 			isa = PBXGroup;
 			children = (
 				22FF92401745939E00ADC59E /* AgentHTTP.h */,
+				22B5502E18F26ADF00A13F28 /* AgentHTTPCookie.h */,
+				22B5502F18F26ADF00A13F28 /* AgentHTTPCookie.m */,
 				22FF92411745939E00ADC59E /* AgentHTTPHelpers.h */,
 				22FF92421745939E00ADC59E /* AgentHTTPHelpers.m */,
 				22FF92431745939E00ADC59E /* AgentHTTPRequest.h */,
@@ -210,6 +219,7 @@
 				22FF92551745939E00ADC59E /* AgentHTTPResponse.m in Sources */,
 				22FF92561745939E00ADC59E /* AgentHTTPServer.m in Sources */,
 				22FF92571745939E00ADC59E /* AgentLibEventHTTPServer.m in Sources */,
+				22B5503018F26ADF00A13F28 /* AgentHTTPCookie.m in Sources */,
 				22FF925A174593B000ADC59E /* main.m in Sources */,
 				22E9FD351745F55500FE9B01 /* AgentHTTPService.m in Sources */,
 			);
@@ -278,7 +288,10 @@
 		22FF9239174592DB00ADC59E /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				FRAMEWORK_SEARCH_PATHS = /Library/Frameworks;
+				FRAMEWORK_SEARCH_PATHS = (
+					/Library/Frameworks,
+					"$(LOCAL_LIBRARY_DIR)/Frameworks",
+				);
 				GCC_PRECOMPILE_PREFIX_HEADER = NO;
 				HEADER_SEARCH_PATHS = (
 					"$(inherited)",
@@ -302,6 +315,10 @@
 		22FF923A174592DB00ADC59E /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(LOCAL_LIBRARY_DIR)/Frameworks",
+				);
 				GCC_PRECOMPILE_PREFIX_HEADER = NO;
 				HEADER_SEARCH_PATHS = (
 					"$(inherited)",
