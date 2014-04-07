@@ -10,12 +10,6 @@
 
 (set PASSWORD_SALT "agent.io")
 
-(class NSString
- (- (id) md5HashWithSalt:(id) salt is
-    (((self dataUsingEncoding:NSUTF8StringEncoding)
-      agent_hmacMd5DataWithKey:(salt dataUsingEncoding:NSUTF8StringEncoding))
-     agent_hexEncodedString)))
-
 (macro get-user (REQUEST)
        `(progn (set screen_name nil)
                (set session nil)
@@ -28,26 +22,6 @@
 
 (macro authenticate ()
        '(progn (get-user REQUEST)))
-
-;; A class for managing user-identifying cookies.
-(class AgentHTTPCookie is NSObject
- 
- (+ (id) cookieWithName:(id) name value:(id)value is
-    ((self alloc) initWithName:name value:value expiration:(NSDate dateWithTimeIntervalSinceNow:3600)))
- 
- (- (id) initWithName:(id) name value:(id) value expiration:(id) expiration is
-    (super init)
-    (set @name name)
-    (set @value value)
-    (set @expiration expiration)
-    (set @stringValue nil)
-    self)
- 
- (- (id) description is
-    "cookie=#{@name} path=\"/\" value=#{@value} expiration=#{(@expiration agent_rfc1123String)}")
- 
- ;; Get a string value for a cookie suitable for inclusion in a response header.
- (- (id) stringValue is "#{@name}=#{@value}; path=\/; Expires:#{(@expiration agent_rfc1123String)};"))
 
 ;;;;;
 
@@ -98,7 +72,7 @@
              (set message "Missing username or password. Try that again.")
              (signin-form username password message))
             ((set account (mongo findOne:(dict username:username
-                                               password:(password md5HashWithSalt:PASSWORD_SALT))
+                                               password:(password agent_md5HashWithSalt:PASSWORD_SALT))
                             inCollection:"accounts.users"))
              
              (unless (set SESSIONTOKEN ((REQUEST cookies) session:))

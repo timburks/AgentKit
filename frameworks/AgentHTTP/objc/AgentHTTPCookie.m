@@ -3,6 +3,7 @@
 #import "AgentHTTPHelpers.h"
 
 @implementation AgentHTTPCookie
+@synthesize name=_name, value=_value, expiration=_expiration;
  
 + (instancetype) cookieWithName:(NSString *) name value:(NSString *) value
 {
