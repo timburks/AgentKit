@@ -41,12 +41,4 @@
      (set result (mongo findOne:(dict _id:key) inCollection:(+ SITE ".properties")))
      (result value:))
 
-(function set-username-password (username password)
-     (mongo updateObject:(dict username:username
-                               password:(password md5HashWithSalt:PASSWORD_SALT))
-            inCollection:(+ SITE ".users")
-            withCondition:(dict username:"admin")
-            insertIfNecessary:YES
-            updateMultipleEntries:NO))
-
 

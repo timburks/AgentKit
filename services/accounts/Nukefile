@@ -1,7 +1,7 @@
 (set appname "accounts")
 
 (set agentbox "http://alpha.agent.io")
-(set credentials "tim:admin123")
+(set credentials "admin:master")
 
 
 (task "zip" is

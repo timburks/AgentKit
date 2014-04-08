@@ -3,11 +3,8 @@
 (load "AgentMongoDB")
 
 (set SITE "control")
-(set PASSWORD_SALT SITE)
-
-(if (eq (uname) "Linux")
-    (then (set CONTROL-PATH "/home/control"))
-    (else (set CONTROL-PATH "/AgentBox")))
+(set PASSWORD_SALT "agent.io")
+(set CONTROL-PATH "/home/control")
 
 (class NSString
  (- (id) md5HashWithSalt:(id) salt is

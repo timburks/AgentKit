@@ -81,36 +81,6 @@
 
 ;;;;;
 
-;; local signin
-
-(macro signin-form (username password message)
-       `(progn (htmlpage "Sign In"
-                         (topbar-empty)
-                         (&div class:"row"
-                               (&div class:"medium-6 medium-centered columns"
-                                     (&form method:"post"
-                                            action:"/signin"
-                                            (&fieldset (&legend ,message)
-                                                       (&label for:"username" "Username "
-                                                             style:"margin-right:2em"
-                                                               (&input id:"username"
-                                                                     type:"text"
-                                                                    width:20
-                                                                     name:"username"
-                                                                    title:"username"
-                                                                    value:,username))
-                                                       (&label for:"password" "Password "
-                                                             style:"margin-right:2em"
-                                                               (&input id:"password"
-                                                                     type:"password"
-                                                                    width:20
-                                                                     name:"password"
-                                                                    title:"password"
-                                                                    value:,password))
-                                                       (&button class:"button tiny"
-                                                                 type:"submit"
-                                                                "&nbsp;Sign in&nbsp;"))))))))
-
 (macro adduser-form (message)
        `(progn (htmlpage "Add User"
                          (topbar)
@@ -148,46 +118,113 @@
 
 (get "/accounts/adduser"
      (authenticate)
-     (REQUEST setContentType:"text/html")
-     (set message "Add a new user.")
-     (adduser-form message))
+     (set mongo (AgentMongoDB new))
+     (mongo connect)
+     (set count (mongo countWithCondition:nil inCollection:"users" inDatabase:"accountsH"))
+     (if (or (eq count 0)
+             screen_name)
+         (then (set message "Add a new user.")
+               (adduser-form message))
+         (else screen_name)))
 
 (post "/accounts/adduser"
       (authenticate)
-      (set ip-address ((REQUEST headers) X-Forwarded-For:))
-      (set username ((REQUEST post) username:))
-      (set password ((REQUEST post) password:))
-      (set confirmation ((REQUEST post) password2:))
+      (set mongo (AgentMongoDB new))
+      (mongo connect)
+      (set count (mongo countWithCondition:nil inCollection:"users" inDatabase:"accountsH"))
       
-      (cond ((or (not username) (eq (username length) 0))
-             (set message "Please specify a username.")
-             (adduser-form message))
-            ((or (not password) (< (password length) 4))
-             (set message "Passwords must be at least 4 characters.")
-             (adduser-form message))
-            ((!= password confirmation)
-             (set message "Password and password confirmation entries must match.")
-             (adduser-form message))
-            (else ;; create the account
-                  (set account (create-user username password))
-                  (puts "account created")
-                  
-                  (unless (set SESSIONTOKEN ((REQUEST cookies) session:))
-                          (set SESSIONTOKEN (nonce))
-                          (set sessionCookie (AgentHTTPCookie cookieWithName:"session" value:SESSIONTOKEN))
-                          (RESPONSE setValue:(sessionCookie stringValue) forHTTPHeader:"Set-Cookie"))
-                  
-                  (set session (dict account_id:(account _id:) username:username token:SESSIONTOKEN))
-                  (puts "session created")
+      (if (or (eq count 0)
+              screen_name)
+          (then (set ip-address ((REQUEST headers) X-Forwarded-For:))
+                (set username ((REQUEST post) username:))
+                (set password ((REQUEST post) password:))
+                (set confirmation ((REQUEST post) password2:))
+                
+                (cond ((or (not username) (eq (username length) 0))
+                       (set message "Please specify a username.")
+                       (adduser-form message))
+                      ((or (not password) (< (password length) 4))
+                       (set message "Passwords must be at least 4 characters.")
+                       (adduser-form message))
+                      ((!= password confirmation)
+                       (set message "Password and password confirmation entries must match.")
+                       (adduser-form message))
+                      (else ;; create the account
+                            (set account (create-user username password))
+                            (puts "account created")
+                            
+                            (unless (set SESSIONTOKEN ((REQUEST cookies) session:))
+                                    (set SESSIONTOKEN (nonce))
+                                    (set sessionCookie (AgentHTTPCookie cookieWithName:"session" value:SESSIONTOKEN))
+                                    (RESPONSE setValue:(sessionCookie stringValue) forHTTPHeader:"Set-Cookie"))
+                            
+                            (set session (dict account_id:(account _id:) username:username token:SESSIONTOKEN))
+                            (puts "session created")
+                            (set mongo (AgentMongoDB new))
+                            (mongo connect)
+                            (mongo updateObject:session
+                                   inCollection:"accounts.sessions"
+                                  withCondition:(dict account_id:(account _id:))
+                              insertIfNecessary:YES
+                          updateMultipleEntries:NO)
+                            (puts "session saved")
+                            (RESPONSE redirectResponseToLocation:"/accounts"))))
+          (else nil)))
+
+(delete "/accounts/users/userid:"
+        (authenticate)
+        (if screen_name
+            (then (set userid (oid userid))
                   (set mongo (AgentMongoDB new))
                   (mongo connect)
-                  (mongo updateObject:session
-                         inCollection:"accounts.sessions"
-                        withCondition:(dict account_id:(account _id:))
-                    insertIfNecessary:YES
-                updateMultipleEntries:NO)
-                  (puts "session saved")
-                  (RESPONSE redirectResponseToLocation:"/accounts"))))
+                  (mongo removeWithCondition:(dict _id:userid) fromCollection:"accounts.users")
+                  (redirect "/accounts/users"))
+            (else nil)))
+
+(get "/accounts/users"
+     (authenticate)
+     (set mongo (AgentMongoDB new))
+     (mongo connect)
+     (set users (mongo findArray:nil inCollection:"accounts.users"))
+     (htmlpage "Agent I/O Users"
+               (topbar)
+               (&div class:"row"
+                     (&div class:"small-12 medium-8 medium-centered columns"
+                           (&h1 "Users")
+                           (&dl class:"accordion" data-accordion:1
+                                (users mapWithIndex:
+                                       (do (user index)
+                                           (&dd (&span style:"float:right"
+                                                       (&a href:"#" "Delete"
+                                                        onclick:(js-delete (+ "/accounts/users/" (user _id:)))))
+                                                (&a href:"#panel#{index}" (user username:))
+                                                (&div id:"panel#{index}"
+                                                   style:"background-color:#888;"
+                                                   class:"content"
+                                                      (divs-for-dictionary user))))))))))
+
+
+(get "/accounts/sessions"
+     (authenticate)
+     (set mongo (AgentMongoDB new))
+     (mongo connect)
+     (set sessions (mongo findArray:nil inCollection:"accounts.sessions"))
+     (htmlpage "Agent I/O Sessions"
+               (topbar)
+               (&div class:"row"
+                     (&div class:"small-12 medium-8 medium-centered columns"
+                           (&h1 "Sessions")
+                           (&dl class:"accordion" data-accordion:1
+                                (sessions mapWithIndex:
+                                          (do (session index)
+                                              (&dd (&span style:"float:right"
+                                                          (&a href:"#" "Delete"
+                                                           onclick:(js-delete (+ "/accounts/sessions/" (session _id:)))))
+                                                   (&a href:"#panel#{index}" (session _id:))
+                                                   (&div id:"panel#{index}"
+                                                      style:"background-color:#888;"
+                                                      class:"content"
+                                                         (divs-for-dictionary session))))))))))
 
 (def lookup-user (username password)
      (puts "lookup-user")
@@ -468,8 +505,10 @@
      (set string (string stringByReplacingOccurrencesOfString:"\"" withString:"&quot;"))
      string)
 
+(def js-delete (path)
+     (+ "$.ajax({url:'" path "',type:'DELETE',success:function(response) {location.reload(true);}}); return false;"))
 
-(def postit (path arguments)
+(def js-post (path arguments)
      (set command (+ "var form = document.createElement('form');"
                      "form.setAttribute('method', 'POST');"
                      "form.setAttribute('action', '" path "');"))
@@ -500,23 +539,32 @@
                         (&li class:"name"
                              (&h1 (&a href:"/accounts" "ACCOUNTS")))
                         (&li class:"toggle-topbar menu-icon" (&a href:"#" "Menu")))
-                   (&section class:"top-bar-section">
+                   (&section class:"top-bar-section"
                              ;;<!-- Right Nav Section -->
                              (if screen_name
                                  (&ul class:"right"
-                                      (&li class:"active" (&a href:"#" "Sign out" onclick:(postit "/accounts/signout" nil)))))
+                                      (&li class:"active" (&a href:"#" "Sign out" onclick:(js-post "/accounts/signout" nil)))))
                              
                              ;;<!-- Left Nav Section -->
                              (if screen_name
                                  (&ul class:"left"
+                                      (&li class:"divider")
                                       (&li (&a href:"#" screen_name))
-                                      (&li class:"has-dropdown"
-                                           (&a href:"/accounts" "connect to...")
+                                      (&li class:"divider")
+                                      (&li class:"has-dropdown" (&a href:"/accounts" "connect to...")
                                            (&ul class:"dropdown"
                                                 (account_services map:(do (service)
                                                                           (&li (&a href:(+ "/accounts/" (service vendor:) "/connect")
                                                                                    (service vendor:)))))))
-                                      (&li (&a href:"/accounts/services" "services"))))))))
+                                      (&li class:"divider")
+                                      (&li (&a href:"/accounts/users" "users"))
+                                      (&li class:"divider")
+                                      (&li (&a href:"/accounts/sessions" "sessions"))
+                                      (&li class:"divider")
+                                      (&li (&a href:"/accounts/services" "services"))
+                                      (&li class:"divider")
+                                      (&li (&a href:"/control" "CONTROL"))
+                                      ))))))
 
 (post "/accounts/disconnect"
       (authenticate)
@@ -554,8 +602,8 @@
                                                                       (do (connection index)
                                                                           (&dd (&span style:"float:right"
                                                                                       (&a href:"#" "Disconnect"
-                                                                                       onclick:(postit "/accounts/disconnect"
-                                                                                                       (dict id:(connection _id:)))))
+                                                                                       onclick:(js-post "/accounts/disconnect"
+                                                                                                        (dict id:(connection _id:)))))
                                                                                (&a href:"#panel#{index}" (connection provider:))
                                                                                (&div id:"panel#{index}"
                                                                                   style:"background-color:#888;"
@@ -835,5 +883,8 @@
                            (&p "You wanted: #{*path}")
                            (&p "Sorry.")))))
 
-(AgentHTTPServer run)
+;(AgentHTTPServer run)
+(set s ((AgentLibEVHTPServer alloc) initWithService:(AgentHTTPService sharedService)))
+(s setVerbose:YES)
+(s run)
 

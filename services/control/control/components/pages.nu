@@ -20,8 +20,8 @@
            stringByReplacingOccurrencesOfString:"\"" withString:"&quot;"))
 
 (macro require-user ()
-       `(unless (set account (get-user SITE))
-                (return (RESPONSE redirectResponseToLocation:"/control/signin"))))
+       `(unless (set account (get-user REQUEST))
+                (return (RESPONSE redirectResponseToLocation:"/signin"))))
 
 (macro require-authorization ()
        `(progn (set authorization ((REQUEST headers) Authorization:))
@@ -31,27 +31,29 @@
                (set parts (credentials componentsSeparatedByString:":"))
                (set username (parts 0))
                (set password (parts 1))
-               (set account (mongo findOne:(dict username:username
-                                                 password:(password md5HashWithSalt:PASSWORD_SALT))
-                              inCollection:(+ SITE ".users")))
+
+               (set user (mongo findOne:(dict username:username
+                                              password:(password md5HashWithSalt:PASSWORD_SALT))
+                             inCollection:"accounts.users"))
+               (set account user)
                (unless account (return "unauthorized"))))
 
 (get "/control"
      (require-user)
-     (set apps (mongo findArray:(dict $query:(dict owner_id:(account _id:))
+     (set myapps (mongo findArray:(dict $query:(dict) 
                                     $orderby:(dict name:1))
-                   inCollection:(+ SITE ".apps")))
+                   inCollection:"control.apps"))
      (set worker-count 0)
-     (apps each:
+     (myapps each:
            (do (app)
                (set worker-count (+ worker-count (((app deployment:) workers:) count)))))
      (htmlpage "AgentBox"
                (&& (navbar "Home")
                    (&div class:"row"
                          (&div class:"large-12 columns"
-                               (&p "Monitoring " (apps count) " apps. "
+                               (&p "Monitoring " (myapps count) " apps. "
                                    "Running " worker-count " instances.")))
-                   ((apps subarraysOfN:3) map:
+                   ((myapps subarraysOfN:3) map:
                     (do (row)
                         (&div class:"row"
                               (row map:
@@ -110,7 +112,7 @@
 (get "/control/apps/manage/appid:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
-     (set app (mongo findOne:(dict _id:(oid appid) owner_id:(account _id:)) inCollection:(+ SITE ".apps")))
+     (set app (mongo findOne:(dict _id:(oid appid)) inCollection:(+ SITE ".apps")))
      (htmlpage (+ "Manage " (app name:))
                (&div (navbar "Manage")
                      (&div class:"row"
@@ -169,7 +171,7 @@
 (get "/control/apps/manage/stop/appid:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
-     (set app (mongo findOne:(dict _id:(oid appid) owner_id:(account _id:)) inCollection:(+ SITE ".apps")))
+     (set app (mongo findOne:(dict _id:(oid appid)) inCollection:(+ SITE ".apps")))
      (unless app (return nil))
      (halt-app-deployment app)
      (RESPONSE redirectResponseToLocation:(+ "/control/apps/manage/" appid)))
@@ -177,7 +179,7 @@
 (get "/control/apps/manage/delete/appid:/version:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
-     (set app (mongo findOne:(dict _id:(oid appid) owner_id:(account _id:)) inCollection:(+ SITE ".apps")))
+     (set app (mongo findOne:(dict _id:(oid appid)) inCollection:(+ SITE ".apps")))
      (unless app (return nil))
      (set version ((REQUEST bindings) version:))
      (set versions (app versions:))
@@ -197,7 +199,7 @@
 (get "/control/apps/manage/deploy/appid:/version:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
-     (set app (mongo findOne:(dict _id:(oid appid) owner_id:(account _id:)) inCollection:(+ SITE ".apps")))
+     (set app (mongo findOne:(dict _id:(oid appid)) inCollection:(+ SITE ".apps")))
      (unless app (return nil))
      (set version ((REQUEST bindings) version:))
      (deploy-version app version)
@@ -206,7 +208,7 @@
 (post "/control/apps/upload/appid:"
       (require-user)
       (set appid ((REQUEST bindings) appid:))
-      (set app (mongo findOne:(dict _id:(oid appid) owner_id:(account _id:)) inCollection:(+ SITE ".apps")))
+      (set app (mongo findOne:(dict _id:(oid appid)) inCollection:(+ SITE ".apps")))
       (unless app (return nil))
       (puts "uploading")
       (set d ((REQUEST body) multipartDictionary))
@@ -234,12 +236,12 @@
                               (mongo-connect)
                               (set account (mongo findOne:(dict username:username
                                                                 password:(password md5HashWithSalt:PASSWORD_SALT))
-                                             inCollection:(+ SITE ".users"))))
+                                             inCollection:"accounts.users")))
                      ("Bearer" (set secret (parts 1))
                                (mongo-connect)
                                (set account (mongo findOne:(dict secret:secret)
-                                              inCollection:(+ SITE ".users"))))
-                     (else (set account (get-user SITE))))
+                                              inCollection:"accounts.users")))
+                     (else (set account (get-user REQUEST))))
                (if account
                    (then ((progn ,@*body) XMLPropertyListRepresentation))
                    (else (RESPONSE setStatus:401)
@@ -261,7 +263,7 @@
 (post "/control/api/admin"
       (noauth (set admin ((REQUEST body) propertyListValue))
                (mongo-connect)
-               (if (mongo countWithCondition:(dict) inCollection:"users" inDatabase:SITE)
+               (if (mongo countWithCondition:(dict) inCollection:"users" inDatabase:"accounts")
                    (then (dict message:"Admin already exists"))
                    (else (mongo insertObject:(dict username:(admin username:)
                                                    password:((admin password:) md5HashWithSalt:PASSWORD_SALT)
@@ -297,7 +299,7 @@
 (get "/control/apps/edit/appid:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
-     (set app (mongo findOne:(dict _id:(oid appid) owner_id:(account _id:)) inCollection:(+ SITE ".apps")))
+     (set app (mongo findOne:(dict _id:(oid appid)) inCollection:(+ SITE ".apps")))
      (unless app (return nil))
      (htmlpage (+ "Editing " (app name:))
                (&div (navbar "Edit")
@@ -326,7 +328,7 @@
 (post "/control/apps/edit/appid:"
       (require-user)
       (set appid ((REQUEST bindings) appid:))
-      (set app (mongo findOne:(dict _id:(oid appid) owner_id:(account _id:)) inCollection:(+ SITE ".apps")))
+      (set app (mongo findOne:(dict _id:(oid appid)) inCollection:(+ SITE ".apps")))
       (unless app (return nil))
       (set post (REQUEST post))
       (set update (dict name:(post name:)
@@ -344,7 +346,7 @@
 (get "/control/apps/delete/appid:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
-     (set app (mongo findOne:(dict _id:(oid appid) owner_id:(account _id:)) inCollection:(+ SITE ".apps")))
+     (set app (mongo findOne:(dict _id:(oid appid)) inCollection:(+ SITE ".apps")))
      (unless app (return nil))
      (htmlpage "delete this app?"
                (&div (navbar "delete this app?")
@@ -364,7 +366,7 @@
 (post "/control/apps/delete/appid:"
       (require-user)
       (set appid ((REQUEST bindings) appid:))
-      (set app (mongo findOne:(dict _id:(oid appid) owner_id:(account _id:)) inCollection:(+ SITE ".apps")))
+      (set app (mongo findOne:(dict _id:(oid appid)) inCollection:(+ SITE ".apps")))
       (unless app (return nil))
       (set post (REQUEST post))
       (puts (post description))
@@ -386,7 +388,7 @@
 (get "/control/apps/manage/appid:/container:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
-     (set app (mongo findOne:(dict _id:(oid appid) owner_id:(account _id:)) inCollection:(+ SITE ".apps")))
+     (set app (mongo findOne:(dict _id:(oid appid)) inCollection:(+ SITE ".apps")))
      (unless app (return nil))
      (set container ((REQUEST bindings) container:))
      (set worker nil)
@@ -409,7 +411,7 @@
 (get "/control/apps/manage/appid:/container:/file:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
-     (set app (mongo findOne:(dict _id:(oid appid) owner_id:(account _id:)) inCollection:(+ SITE ".apps")))
+     (set app (mongo findOne:(dict _id:(oid appid)) inCollection:(+ SITE ".apps")))
      (unless app (return nil))
      (set container ((REQUEST bindings) container:))
      (set worker nil)

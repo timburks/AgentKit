@@ -11,8 +11,6 @@
 
 ;; subsystems
 (load "components/upstart")
-(load "components/launchd")
-(load "components/sandbox")
 (load "components/nginx")
 
 ;; application logic

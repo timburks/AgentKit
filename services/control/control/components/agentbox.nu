@@ -1,24 +1,3 @@
-
-(function lookup-user (username password)
-          (puts "lookup-user")
-          (mongo findOne:(dict username:username) inCollection:(+ SITE ".users")))
-
-(function create-user (username password)
-          (puts (+ "create-user" username password))
-          (if (set user (lookup-user username password))
-              (puts "user exists")
-              (return nil))
-          (puts "creating user")
-          (set user (dict username:username
-                          password:(password md5HashWithSalt:PASSWORD_SALT)
-                            secret:((AgentUUID new) stringValue)))
-          (mongo updateObject:user
-                 inCollection:(+ SITE ".users")
-                withCondition:(dict username:username)
-            insertIfNecessary:YES
-        updateMultipleEntries:NO)
-          (mongo findOne:(dict username:username) inCollection:(+ SITE ".users")))
-
 (function add-app (app)
           (mongo insertObject:app intoCollection:(+ SITE ".apps")))
 
@@ -201,10 +180,6 @@
                     (puts ((app deployment:) description))
                     ))
           (restart-nginx))
-
-
-
-
 
 (function halt-app-deployment (app)
           ;; get deployment

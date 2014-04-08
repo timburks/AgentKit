@@ -103,7 +103,7 @@ END)))))
                                              "            proxy_set_header Host $host;\n"
                                              "            proxy_pass http://" (app _id:) ";\n"
                                              "            proxy_set_header X-Forwarded-For $remote_addr;\n"
-                                             "        }"))))))
+                                             "        }\n"))))))
           RESULTS)
 
 (function upstream-servers-for-apps (apps)

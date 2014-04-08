@@ -24,11 +24,11 @@
      (puts (QUERY description))
      (set username (QUERY username:))
      (set password (QUERY password:))
-     (set mongo (RadMongoDB new))
+     (set mongo (AgentMongoDB new))
      (mongo connect)
      (set account (mongo findOne:(dict username:username
-                                       password:(password md5HashWithSalt:PASSWORD_SALT))
-                    inCollection:(+ SITE ".users")))
+                                       password:(password agent_md5HashWithSalt:PASSWORD_SALT))
+                    inCollection:"accounts.users"))
      (if account
          (then (account removeObjectForKey:"password")
                (account removeObjectForKey:"_id")

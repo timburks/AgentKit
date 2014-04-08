@@ -17,28 +17,30 @@
 
 (macro htmlpage (title *body)
        `(progn (REQUEST setContentType:"text/html")
-               (unless (defined account) (set account (get-user SITE)))
-               (&html (&head (&meta charset:"utf-8")
-                             (&title ,title)
+               (unless (defined account) (set account (get-user REQUEST)))
+               (&html class:"no-js" lang:"en"
+                      (&head (&meta charset:"utf-8")
                              (&meta name:"viewport" content:"width=device-width, initial-scale=1.0")
-                             (&meta name:"description" content:"CONTROL")
+                             (&meta name:"description" content:"My Agent on the Internet")
+                             (&meta name:"keywords" content:"agent,personal")
                              (&meta name:"author" content:"Tim Burks")
-                             (&script src:"/foundation/js/custom.modernizr.js")
-                             (&link href:"/foundation/css/normalize.css" rel:"stylesheet")
-                             (&link href:"/foundation/css/foundation.min.css" rel:"stylesheet"))
+                             (&title ,title)
+                             (&link rel:"stylesheet" href:"/foundation-5/css/foundation.min.css")
+                             (&script src:"/foundation-5/js/vendor/modernizr.js"))
                       (&body ,@*body
-                             (&script src:"/foundation/js/jquery.js")
-                             (&script src:"/foundation/js/foundation.min.js")
+                             ;(&div class:"row" (&div class:"large-12 columns" (&hr) "alpha.agent.io"))
+                             (&script src:"/foundation-5/js/vendor/jquery.js")
+                             (&script src:"/foundation-5/js/foundation.min.js")
                              (&script "$(document).foundation();")))))
 
 (macro navbar (name)
        `(progn
               (if (and (defined account) account)
-                  (set apps (mongo findArray:(dict $query:(dict owner_id:(account _id:))
+                  (set apps (mongo findArray:(dict $query:(dict) ;; (dict owner_id:(account _id:))
                                                  $orderby:(dict name:1))
                                 inCollection:(+ SITE ".apps"))))
-              (&div class:""
-                    (&nav class:"top-bar"
+              (&div class:"contain-to-grid" style:"margin-bottom:20px"
+                    (&nav class:"top-bar" data-topbar:1
                           (&ul class:"title-area"
                                (&li class:"name" (&h1 (&a href:"/control" "CONTROL")))
                                (&li class:"toggle-topbar menu-icon"
@@ -61,10 +63,8 @@
                                                        (&li (&a href:"/control/apps/add" "Add an app"))))))
                                     (&ul class:"right"
                                          (if (and (defined account) account)
-                                             (then (&& (&li (&a href:"#"
-                                                                "signed in as " (account username:)))
-                                                       (&li (&a href:"/control/signout" " sign out"))
-                                                       (&li (&a href:"/control/adduser" " add user"))
+                                             (then (&& (&li (&a href:"#" "signed in as " (account username:)))
+                                                       (&li (&a href:"/accounts" " accounts"))
                                                        (&li (&a href:"/control/restart" " restart"))))
-                                             (else (&li href:"/control/signin" "sign in")))))))))
+                                             (else (&li href:"/signin" "sign in")))))))))
 
