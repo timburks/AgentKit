@@ -5,30 +5,19 @@
 
 (set PASSWORD_SALT "agent.io")
 
-(macro redirect (location)
-       `(progn (RESPONSE setStatus:303)
-               (RESPONSE setValue:,location forHTTPHeader:"Location")
-               "redirecting"))
 
-(macro htmlpage (title *body)
-       `(&html class:"no-js" lang:"en"
-               (&head (&meta charset:"utf-8")
-                      (&meta name:"viewport" content:"width=device-width, initial-scale=1.0")
-                      (&title ,title)
-                      (&link rel:"stylesheet" href:"/foundation-5/css/foundation.min.css")
-                      (&script src:"/foundation-5/js/vendor/modernizr.js"))
-               (&body (&div class:"contain-to-grid" style:"margin-bottom:20px;" (&nav class:"top-bar" data-topbar:1))
-                      ,@*body)))
-
-(macro get-user (REQUEST)
-       `(progn (set screen_name nil)
-               (set session nil)
-               (if (set token ((,REQUEST cookies) session:))
-                   (set mongo (AgentMongoDB new))
-                   (mongo connect)
-                   (set session (mongo findOne:(dict token:token) inCollection:"accounts.sessions"))
-                   (set screen_name (session username:)))
-               session))
+(set common (NSString stringWithContentsOfFile:"common.nu" encoding:NSUTF8StringEncoding error:nil))
+(set mongo (AgentMongoDB new))
+(while (mongo connect)
+       (NSLog "waiting for mongodb")
+       (sleep 1))
+(set code (dict _id:"common" nu:common))
+(mongo updateObject:code
+       inCollection:"control.code"
+      withCondition:(dict _id:(code _id:))
+  insertIfNecessary:YES
+updateMultipleEntries:NO)
+(eval (parse common))
 
 (macro signin-form (username password message)
        `(progn (htmlpage "Sign In"
@@ -58,7 +47,7 @@
                                                                 "&nbsp;Sign in&nbsp;"))))))))
 
 (get "/signin"
-     (get-user REQUEST)
+     (authenticate)
      (if screen_name
          (then (redirect "/accounts"))
          (else (signin-form "" "" "Hello!"))))
@@ -70,20 +59,19 @@
       (set ip-address ((REQUEST headers) "X-Forwarded-For"))
       (set username ((REQUEST post) "username"))
       (set password ((REQUEST post) "password"))
-      (NSLog ((REQUEST post) description))
       (cond ((or (not username) (not password))
-             (set message "Missing username or password. Try that again.")
+             (set message "Missing username or password. Please try that again.")
              (signin-form username password message))
             ((set account (mongo findOne:(dict username:username
                                                password:(password agent_md5HashWithSalt:PASSWORD_SALT))
                             inCollection:"accounts.users"))
-             
-             (unless (set SESSIONTOKEN ((REQUEST cookies) session:))
-                     (set SESSIONTOKEN ((AgentUUID new) stringValue))
-                     (set sessionCookie (AgentHTTPCookie cookieWithName:"session" value:SESSIONTOKEN))
+             ;; create a session token and set it in a cookie
+             (unless (set SESSIONCOOKIE ((REQUEST cookies) session:))
+                     (set SESSIONCOOKIE ((AgentUUID new) stringValue))
+                     (set sessionCookie (AgentHTTPCookie cookieWithName:"session" value:SESSIONCOOKIE))
                      (RESPONSE setValue:(sessionCookie stringValue) forHTTPHeader:"Set-Cookie"))
-             
-             (set session (dict account_id:(account _id:) username:username token:SESSIONTOKEN))
+             ;; save the session keyed by the cookie
+             (set session (dict account_id:(account _id:) username:username cookie:SESSIONCOOKIE))
              (mongo updateObject:session
                     inCollection:"accounts.sessions"
                    withCondition:(dict account_id:(account _id:))
@@ -102,6 +90,5 @@
                            (&p "You wanted: #{*path}")
                            (&p "Sorry.")))))
 
-(NSLog "signin START")
 (AgentHTTPServer run)
 

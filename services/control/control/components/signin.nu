@@ -14,8 +14,3 @@
 
 (macro require-account ()
        (unless (set account (get-user REQUEST)) (return nil)))
-
-(get "/control/whoami"
-     (set account (get-user REQUEST))
-     (REQUEST setContentType:"text/plain")
-     (account description))

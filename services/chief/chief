@@ -1,0 +1,475 @@
+#!/usr/local/bin/nush
+(load "AgentHTTP")
+(load "AgentCrypto")
+(load "AgentMongoDB")
+
+(function html-escape (s)
+          ((((s stringByReplacingOccurrencesOfString:"&" withString:"&amp;")
+             stringByReplacingOccurrencesOfString:"<" withString:"&lt;")
+            stringByReplacingOccurrencesOfString:">" withString:"&gt;")
+           stringByReplacingOccurrencesOfString:"\"" withString:"&quot;"))
+
+(set mongo (AgentMongoDB new))
+(while (mongo connect)
+       (NSLog "waiting for mongodb")
+       (sleep 1))
+(set common (mongo findOne:(dict _id:"common") inCollection:"control.code"))
+(if common (eval (parse (common nu:))))
+
+((set date-formatter
+      ((NSDateFormatter alloc) init))
+ setDateFormat:"EEEE MMMM d, yyyy")
+
+((set rss-date-formatter
+      ((NSDateFormatter alloc) init))
+ setDateFormat:"EEE, d MMM yyyy hh:mm:ss ZZZ")
+
+
+(function oid (string)
+          ((AgentBSONObjectID alloc) initWithString:string))
+
+(class NSArray
+ (- subarraysOfN:n is
+    (set a (array))
+    (set current (array))
+    (self each:
+          (do (item)
+              (if (eq (current count) 0)
+                  (a << current))
+              (current << item)
+              (if (eq (current count) n)
+                  (set current (array)))))
+    a))
+
+(macro require-user ()
+       `(unless (set account (authenticate))
+                (return (RESPONSE redirectResponseToLocation:"/signin"))))
+
+(macro topbar ()
+       (set mongo (AgentMongoDB new))
+       (mongo connect)
+       (set barapps (mongo findArray:(dict $query:(dict) $orderby:(dict name:1))
+                        inCollection:"control.apps"))
+       (set additional-items (array (&li class:"divider")
+                                    (&li class:"has-dropdown" (&a href:"#" "system...")
+                                         (&ul class:"dropdown"
+                                              (&li (&a href:"/chief/nginx" "nginx"))
+                                              (&li class:"divider")
+                                              (&li (&a href:"/chief/mongodb" "mongodb"))))
+                                    (&li class:"divider")
+                                    (&li class:"has-dropdown" (&a href:"#" "apps...")
+                                         (&ul class:"dropdown"
+                                              (barapps map:(do (app)
+                                                               (&li (&a href:(+ "/chief/apps/manage/" (app _id:))
+                                                                        (app name:)))))
+                                              (&li class:"divider")
+                                              (&li (&a href:"/chief/apps/add" "Add an app"))))))
+       (topbar-for-app "CHIEF" additional-items))
+
+(get "/chief"
+     (authenticate)
+     (if screen_name
+         (then (set myapps (mongo findArray:(dict $query:(dict)
+                                                $orderby:(dict name:1))
+                               inCollection:"control.apps"))
+               (set worker-count 0)
+               (myapps each:
+                       (do (app)
+                           (set worker-count (+ worker-count (((app deployment:) workers:) count)))))
+               (htmlpage "Chief"
+                         (topbar)
+                         (&div class:"row"
+                               (&div class:"large-12 columns"
+                                     (&p "Monitoring " (myapps count) " apps. "
+                                         "Running " worker-count " instances.")))
+                         ((myapps subarraysOfN:3) map:
+                          (do (row)
+                              (&div class:"row"
+                                    (row map:
+                                         (do (app)
+                                             (&div class:"large-4 columns end"
+                                                   (&div class:"panel" style:"margin:5px"
+                                                         (progn
+                                                               (if (and (app path:) ((app path:) length))
+                                                                   (then (set link (+ "/" (app path:))))
+                                                                   (else (set link (+ "http://" (((app domains:) componentsSeparatedByString:" ") 0)))))
+                                                               (&div
+                                                                    (&h3 (&a href:link (app name:)))
+                                                                    (&p (app description:))
+                                                                    (&p (&a href:(+ "/chief/apps/manage/" (app _id:)) "Manage it."))
+                                                                    ))))))
+                                    )))
+                         ))
+         (else nil)))
+
+(get "/chief/apps/add"
+     (require-user)
+     (htmlpage "Add an app"
+               (&& (topbar)
+                   (&div class:"row"
+                         (&div class:"large-12 columns"
+                               (&h1 "Add an app")
+                               (&form action:"/chief/apps/add/"
+                                          id:"edit" method:"post"
+                                      (&dl (&dt (&label for:"app_name" "App name"))
+                                           (&dd (&input id:"app_name" name:"name" size:"40" type:"text"))
+                                           (&dt (&label for:"app_path" "App path"))
+                                           (&dd (&input id:"app_path" name:"path" size:"40" type:"text"))
+                                           (&dt (&label for:"app_domains" "App domains"))
+                                           (&dd (&input id:"app_domains" name:"domains" size:"40" type:"text"))
+                                           (&dt (&label for:"app_workers" "App workers"))
+                                           (&dd (&select id:"app_workers" name:"workers"
+                                                         ((array 1 2 3 4 5 6 7 8 9 10) map:
+                                                          (do (i) (&option value:i i selected:(eq i 3))))))
+                                           (&dt (&label for:"app_description" "Description"))
+                                           (&dd (&textarea id:"app_description" name:"description"
+                                                         rows:"5" cols:"60")))
+                                      (&input name:"save" type:"submit" value:"Save")
+                                      " or "
+                                      (&a href:"/chief" "Cancel")))))))
+
+(function add-app (app)
+          (mongo insertObject:app intoCollection:"control.apps"))
+
+(post "/chief/apps/add"
+      (require-user)
+      (set app (dict name:((REQUEST post) name:)
+                     path:((REQUEST post) path:)
+                  domains:((REQUEST post) domains:)
+              description:((REQUEST post) description:)
+                  workers:(((REQUEST post) workers:) intValue)
+                 owner_id:(account _id:)))
+      (set appid (add-app app))
+      (RESPONSE redirectResponseToLocation:(+ "/chief/apps/manage/" appid)))
+
+(get "/chief/apps/manage/appid:"
+     (require-user)
+     (set appid ((REQUEST bindings) appid:))
+     (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
+     (htmlpage (+ "Manage " (app name:))
+               (&div (topbar)
+                     (&div class:"row"
+                           (&div class:"large-12 columns"
+                                 (&h1 (app name:))
+                                 (&table class:"table table-bordered"
+                                         (&tr (&td "Path")
+                                              (&td (app path:)))
+                                         (&tr (&td width:"20%" "Domains")
+                                              (&td
+                                                  (((app domains:) componentsSeparatedByString:" ")
+                                                   map:(do (domain)
+                                                           (&span
+                                                                 (&a href:(+ "http://" domain) domain) "&nbsp;")))))
+                                         (&tr (&td "Description")
+                                              (&td (app description:))))
+                                 (&h3 "Versions")
+                                 (if ((app versions:) count)
+                                     (then (&table class:"table table-bordered"
+                                                   ((app versions:) map:
+                                                    (do (version)
+                                                        (&tr (&td (version filename:))
+                                                             (&td style:"font-size:80%;"
+                                                                  (rss-date-formatter stringFromDate:(version created_at:))
+                                                                  (&br)
+                                                                  (version version:))
+                                                             (&td (&a href:(+ "/chief/apps/manage/delete/" appid "/" (version version:))
+                                                                      "Delete"))
+                                                             (&td (&a href:(+ "/chief/apps/manage/deploy/" appid "/" (version version:))
+                                                                      "Deploy")))))))
+                                     (else (&p "No versions have been uploaded.")))
+                                 (if (app deployment:)
+                                     (+
+                                       (&span style:"float:right" (&a href:(+ "/chief/apps/manage/stop/" (app _id:)) "Stop"))
+                                       (&h3 "Deployment")
+                                       (&table class:"table table-bordered"
+                                               (&tr (&td "name") (&td ((app deployment:) name:)))
+                                               (&tr (&td "version") (&td ((app deployment:) version:)))
+                                               (((app deployment:) workers:) map:
+                                                (do (worker)
+                                                    (+ (&tr (&td (&strong "worker"))
+                                                            (&td (worker host:) ":" (worker port:)))
+                                                       (&tr (&td) (&td (&a href:(+ "/chief/apps/manage/" appid "/" (worker container:))
+                                                                           (worker container:))))))))))
+                                 (&form action:(+ "/chief/apps/upload/" appid)
+                                        method:"post"
+                                       enctype:"multipart/form-data"
+                                        (&p "To upload a new version of this app:")
+                                        (&input type:"file" name:"appfile" size:40)
+                                        (&input type:"submit" name:"upload" value:"upload"))
+                                 (&hr style:"margin-top:2em;")
+                                 (&a href:(+ "/chief/apps/edit/" appid) "Edit this app")
+                                 " | "
+                                 (&a href:(+ "/chief/apps/delete/" appid) "Delete this app"))))))
+
+(get "/chief/apps/manage/stop/appid:"
+     (require-user)
+     (set appid ((REQUEST bindings) appid:))
+     (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
+     (unless app (return nil))
+     (halt-app-deployment app)
+     (RESPONSE redirectResponseToLocation:(+ "/chief/apps/manage/" appid)))
+
+(get "/chief/apps/manage/delete/appid:/version:"
+     (require-user)
+     (set appid ((REQUEST bindings) appid:))
+     (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
+     (unless app (return nil))
+     (set version ((REQUEST bindings) version:))
+     (set versions (app versions:))
+     (set versions (versions select:
+                             (do (v) (ne (v version:) version))))
+     (set update (dict $set:(dict versions:versions)))
+     (mongo updateObject:update
+            inCollection:"control.apps"
+           withCondition:(dict _id:(oid appid))
+       insertIfNecessary:NO
+   updateMultipleEntries:NO)
+     (mongo removeFile:version
+          inCollection:"appfiles"
+            inDatabase:"control")
+     (RESPONSE redirectResponseToLocation:(+ "/chief/apps/manage/" appid)))
+
+(get "/chief/apps/manage/deploy/appid:/version:"
+     (require-user)
+     (set appid ((REQUEST bindings) appid:))
+     (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
+     (unless app (return nil))
+     (set version ((REQUEST bindings) version:))
+     (deploy-version app version)
+     (RESPONSE redirectResponseToLocation:(+ "/chief/apps/manage/" appid)))
+
+(post "/chief/apps/upload/appid:"
+      (require-user)
+      (set appid ((REQUEST bindings) appid:))
+      (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
+      (unless app (return nil))
+      (puts "uploading")
+      (set d ((REQUEST body) multipartDictionary))
+      (puts (d description))
+      (if (and (set appfile (d appfile:))
+               (set appfile-data (appfile data:))
+               (appfile-data length)
+               (set appfile-name (appfile filename:)))
+          (then ;; save appfile
+                (puts "saving")
+                (add-version app appfile-name appfile-data)))
+      (RESPONSE redirectResponseToLocation:(+ "/chief/apps/manage/" appid)))
+
+;;=== Me ===
+
+(get "/chief/apps/edit/appid:"
+     (require-user)
+     (set appid ((REQUEST bindings) appid:))
+     (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
+     (unless app (return nil))
+     (htmlpage (+ "Editing " (app name:))
+               (&div (topbar)
+                     (&div class:"row"
+                           (&div class:"large-12 columns"
+                                 (&h1 "Editing " (app name:))
+                                 (&form action:(+ "/chief/apps/edit/" appid)
+                                            id:"edit" method:"post"
+                                        (&dl (&dt (&label for:"app_name" "App name"))
+                                             (&dd (&input id:"app_name" name:"name" size:"40" type:"text" value:(app name:)))
+                                             (&dt (&label for:"app_path" "App path"))
+                                             (&dd (&input id:"app_path" name:"path" size:"40" type:"text" value:(app path:)))
+                                             (&dt (&label for:"app_domains" "App domains"))
+                                             (&dd (&input id:"app_domains" name:"domains" size:"40" type:"text" value:(app domains:)))
+                                             (&dt (&label for:"app_workers" "Number of workers"))
+                                             (&dd (&select id:"app_workers" name:"workers"
+                                                           ((array 1 2 3 4 5 6 7 8 9 10) map:
+                                                            (do (i) (&option value:i i selected:(eq i (app workers:)))))))
+                                             (&dt (&label for:"app_description" "Description"))
+                                             (&dd (&textarea  id:"app_description" name:"description"
+                                                            rows:"5" cols:"60" (app description:))))
+                                        (&input name:"save" type:"submit" value:"Save")
+                                        " or "
+                                        (&a href:"/chief" "Cancel")))))))
+
+(post "/chief/apps/edit/appid:"
+      (require-user)
+      (set appid ((REQUEST bindings) appid:))
+      (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
+      (unless app (return nil))
+      (set post (REQUEST post))
+      (set update (dict name:(post name:)
+                        path:(post path:)
+                     domains:(post domains:)
+                 description:(post description:)
+                     workers:((post workers:) intValue)))
+      (mongo updateObject:(dict $set:update)
+             inCollection:"control.apps"
+            withCondition:(dict _id:(oid appid))
+        insertIfNecessary:NO
+    updateMultipleEntries:NO)
+      (RESPONSE redirectResponseToLocation:(+ "/chief/apps/manage/" appid)))
+
+(get "/chief/apps/delete/appid:"
+     (require-user)
+     (set appid ((REQUEST bindings) appid:))
+     (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
+     (unless app (return nil))
+     (htmlpage "delete this app?"
+               (&div (topbar)
+                     (&div class:"row"
+                           (&div class:"large-12 columns"
+                                 (&h1 "Do you really want to delete this app?")
+                                 (&table (&tr (&td "name") (&td (app name:)))
+                                         (&tr (&td "domains" (&td (app domains:))))
+                                         (&tr (&td "description" (&td (app description:)))))
+                                 (&h2 "WARNING: there is no undo.")
+                                 (&form action:(+ "/chief/apps/delete/" appid)
+                                        method:"POST"
+                                        (&input type:"submit" name:"submit" value:"OK")
+                                        "&nbsp;"
+                                        (&input type:"submit" name:"submit" value:"Cancel")))))))
+
+(post "/chief/apps/delete/appid:"
+      (require-user)
+      (set appid ((REQUEST bindings) appid:))
+      (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
+      (unless app (return nil))
+      (set post (REQUEST post))
+      (puts (post description))
+      (if (eq (post submit:) "OK")
+          (then (mongo removeWithCondition:(dict _id:(oid appid)) fromCollection:"control.apps")
+                ;; TODO stop and remove the app workers
+                ((app versions:) each:
+                 (do (version)
+                     (mongo removeFile:(version version:)
+                          inCollection:"appfiles"
+                            inDatabase:"control")))
+                (htmlpage "item deleted"
+                          (&div (topbar)
+                                (&div class:"row"
+                                      (&div class:"large-12 columns"
+                                            (&h2 "It's gone.")))))))
+      (else (RESPONSE redirectResponseToLocation:(+ "/chief/apps/manage/" appid))))
+
+(get "/chief/apps/manage/appid:/container:"
+     (require-user)
+     (set appid ((REQUEST bindings) appid:))
+     (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
+     (unless app (return nil))
+     (set container ((REQUEST bindings) container:))
+     (set worker nil)
+     (if (app deployment:)
+         (then (set worker (((app deployment:) workers:) find:(do (w) (eq (w container:) container))))
+               (htmlpage "worker detail"
+                         (&div (topbar)
+                               (&div class:"row"
+                                     (&div class:"large-12 columns"
+                                           (&h1 "Worker for " (&a href:(+ "/chief/apps/manage/" appid) (app name:)))
+                                           (&pre (worker description))
+                                           (&ul (&li (&a href:(+ "/chief/apps/manage/" appid "/" container "/upstart.conf") "upstart.conf"))
+                                                (&li (&a href:(+ "/chief/apps/manage/" appid "/" container "/worker.log") "worker.log"))))))))
+         (else "not found")))
+
+(get "/chief/apps/manage/appid:/container:/file:"
+     (require-user)
+     (set appid ((REQUEST bindings) appid:))
+     (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
+     (unless app (return nil))
+     (set container ((REQUEST bindings) container:))
+     (set worker nil)
+     (set text nil)
+     (if (app deployment:)
+         (then (set worker (((app deployment:) workers:) find:(do (w) (eq (w container:) container))))
+               (set file ((REQUEST bindings) file:))
+               (set text
+                    (case file
+                          ("upstart.conf" (NSString stringWithContentsOfFile:(+ "/etc/init/agentio-worker-" (worker port:) ".conf")))
+                          ("worker.log" (NSString stringWithContentsOfFile:(+ "/var/log/upstart/agentio-worker-" (worker port:) ".log")))
+                          (t nil))))
+         (else (set text nil)))
+     (if text
+         (then (REQUEST setContentType:"text/html")
+               (htmlpage file
+                         (&div (topbar)
+                               (&div class:"row"
+                                     (&div class:"large-12 columns"
+                                           (&h1 file)
+                                           (&pre class:"code" (html-escape text)))))))
+         (else nil)))
+
+
+(get "/chief/mongodb"
+     (require-user)
+     (set collections ((mongo collectionNamesInDatabase:"control") sort))
+     (htmlpage "Browse Data Store"
+               (&div (topbar)
+                     (&div class:"row"
+                           (&div class:"large-12 columns"
+                                 (&h1 "Collections")
+                                 (&table class:"table table-striped"
+                                         (collections mapWithIndex:
+                                                      (do (collection index)
+                                                          (&tr (&td (+ index 1) ". "
+                                                                    (&a href:(+ "/chief/browse/" collection) collection)))))))))))
+
+(get "/chief/browse/collection:"
+     (require-user)
+     (set collection ((REQUEST bindings) collection:))
+     (set documents (mongo findArray:nil inCollection:(+ "control." collection)))
+     (htmlpage (+ "browsing " collection)
+               (&div (topbar)
+                     (&div class:"row"
+                           (&div class:"large-12 columns"
+                                 (&h1 collection)
+                                 (documents map:
+                                            (do (document)
+                                                (&div (&h4 (document _id:))
+                                                      (&pre (document description))))))))))
+
+(get "/chief/nginx.conf"
+     (require-user)
+     (REQUEST setContentType:"text/html")
+     (htmlpage "AgentBox nginx.conf"
+               (&div (topbar)
+                     (&div class:"row"
+                           (&div class:"large-12 columns"
+                                 (&h1 "AgentBox nginx.conf " (&a href:"/chief/restart-nginx" "(restart)"))
+                                 (&pre class:"code" (NSString stringWithContentsOfFile:"/etc/nginx/nginx.conf")))))))
+
+(get "/chief/restart-nginx"
+     ;(require-user)
+     ;(restart-nginx)
+     (RESPONSE redirectResponseToLocation:"/chief"))
+
+;;; site management
+
+(function table-for-dictionary (dictionary)
+          (set keys ((dictionary allKeys) sort))
+          (&table style:"width:100%"
+                  (keys map:
+                        (do (key)
+                            (&tr (&td key) (&td (&pre (dictionary objectForKey:key))))))))
+
+(get "/chief/environment"
+     (set environment ((NSProcessInfo processInfo) environment))
+     (&html (&head (&link href:"/foundation/css/normalize.css" rel:"stylesheet")
+                   (&link href:"/foundation/css/foundation.min.css" rel:"stylesheet"))
+            (&body
+                  (&div class:"row"
+                        (&div class:"large-12 columns"
+                              (&h1 "Agent I/O App")
+                              (&p "Request path: " (REQUEST path))
+                              (&h2 "Request headers")
+                              (table-for-dictionary (REQUEST headers))
+                              (&h2 "Environment")
+                              (table-for-dictionary environment))))))
+
+
+
+
+(get "/*path:"
+     (RESPONSE setStatus:404)
+     (htmlpage "Not found"
+               (&div class:"row"
+                     (&div class:"large-12 columns"
+                           (&h3 "404 Resource Not Found")
+                           (&p "You wanted: #{*path}")
+                           (&p "Sorry.")))))
+
+(AgentHTTPServer run)
+

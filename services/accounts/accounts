@@ -3,8 +3,15 @@
 (load "AgentCrypto")
 (load "AgentMongoDB")
 (load "AgentJSON")
-(load "keys")
 
+(set mongo (AgentMongoDB new))
+(while (mongo connect)
+       (NSLog "waiting for mongodb")
+       (sleep 1))
+(set common (mongo findOne:(dict _id:"common") inCollection:"control.code"))
+(if common (eval (parse (common nu:))))
+
+(load "keys")
 (let ((mongo (AgentMongoDB new)))
      (mongo connect)
      (mongo removeWithCondition:nil fromCollection:"accounts.services")
@@ -23,13 +30,14 @@
                (RESPONSE setValue:,location forHTTPHeader:"Location")
                "redirecting"))
 
+(def nonce () ((AgentUUID new) stringValue))
+
 (set PASSWORD_SALT "agent.io")
 (class NSString
  (- (id) md5HashWithSalt:(id) salt is
     (((self dataUsingEncoding:NSUTF8StringEncoding)
       agent_hmacMd5DataWithKey:(salt dataUsingEncoding:NSUTF8StringEncoding))
      agent_hexEncodedString)))
-
 
 (class NSNumber
  (- map:fn is
@@ -43,7 +51,7 @@
                (if (set token ((,REQUEST cookies) session:))
                    (set mongo (AgentMongoDB new))
                    (mongo connect)
-                   (set session (mongo findOne:(dict token:token) inCollection:"accounts.sessions"))
+                   (set session (mongo findOne:(dict cookie:token) inCollection:"accounts.sessions"))
                    (set screen_name (session username:)))
                session))
 
@@ -56,28 +64,6 @@
 
 (macro authenticate ()
        '(progn (get-user REQUEST)))
-
-;; A class for managing user-identifying cookies.
-(class AgentHTTPCookie is NSObject
- 
- (+ (id) cookieWithName:(id) name value:(id)value is
-    ((self alloc) initWithName:name value:value expiration:(NSDate dateWithTimeIntervalSinceNow:3600)))
- 
- (- (id) initWithName:(id) name value:(id) value expiration:(id) expiration is
-    (super init)
-    (set @name name)
-    (set @value value)
-    (set @expiration expiration)
-    (set @stringValue nil)
-    self)
- 
- (- (id) description is
-    "cookie=#{@name} path=\"/\" value=#{@value} expiration=#{(@expiration agent_rfc1123String)}")
- 
- ;; Get a string value for a cookie suitable for inclusion in a response header.
- (- (id) stringValue is "#{@name}=#{@value}; path=\/; Expires:#{(@expiration agent_rfc1123String)};"))
-
-(def nonce () ((AgentUUID new) stringValue))
 
 ;;;;;
 
@@ -113,8 +99,6 @@
                                                        (&button class:"button tiny"
                                                                  type:"submit"
                                                                 "&nbsp;Add user&nbsp;"))))))))
-
-
 
 (get "/accounts/adduser"
      (authenticate)
@@ -527,44 +511,25 @@
              (&nav class:"top-bar" data-topbar:1)))
 
 (macro topbar ()
-       (unless (defined screen_name) (set screen_name nil))
-       (unless (defined searchtext) (set searchtext ""))
        (set mongo (AgentMongoDB new))
        (mongo connect)
        (set account_services (mongo findArray:(dict $query:(dict) $orderby:(dict vendor:1))
                                  inCollection:"accounts.services"))
-       (&div class:"contain-to-grid" style:"margin-bottom:20px;"
-             (&nav class:"top-bar" data-topbar:1
-                   (&ul class:"title-area"
-                        (&li class:"name"
-                             (&h1 (&a href:"/accounts" "ACCOUNTS")))
-                        (&li class:"toggle-topbar menu-icon" (&a href:"#" "Menu")))
-                   (&section class:"top-bar-section"
-                             ;;<!-- Right Nav Section -->
-                             (if screen_name
-                                 (&ul class:"right"
-                                      (&li class:"active" (&a href:"#" "Sign out" onclick:(js-post "/accounts/signout" nil)))))
-                             
-                             ;;<!-- Left Nav Section -->
-                             (if screen_name
-                                 (&ul class:"left"
-                                      (&li class:"divider")
-                                      (&li (&a href:"#" screen_name))
-                                      (&li class:"divider")
-                                      (&li class:"has-dropdown" (&a href:"/accounts" "connect to...")
-                                           (&ul class:"dropdown"
-                                                (account_services map:(do (service)
-                                                                          (&li (&a href:(+ "/accounts/" (service vendor:) "/connect")
-                                                                                   (service vendor:)))))))
-                                      (&li class:"divider")
-                                      (&li (&a href:"/accounts/users" "users"))
-                                      (&li class:"divider")
-                                      (&li (&a href:"/accounts/sessions" "sessions"))
-                                      (&li class:"divider")
-                                      (&li (&a href:"/accounts/services" "services"))
-                                      (&li class:"divider")
-                                      (&li (&a href:"/control" "CONTROL"))
-                                      ))))))
+       (set additional-items (array (&li class:"divider")
+                                    (&li class:"has-dropdown" (&a href:"#" "view...")
+                                         (&ul class:"dropdown"
+                                              (&li (&a href:"/accounts/users" "users"))
+                                              (&li class:"divider")
+                                              (&li (&a href:"/accounts/sessions" "sessions"))
+                                              (&li class:"divider")
+                                              (&li (&a href:"/accounts/services" "services"))))
+                                    (&li class:"divider")
+                                    (&li class:"has-dropdown" (&a href:"#" "connect to...")
+                                         (&ul class:"dropdown"
+                                              (account_services map:(do (service)
+                                                                        (&li (&a href:(+ "/accounts/" (service vendor:) "/connect")
+                                                                                 (service vendor:)))))))))
+       (topbar-for-app "ACCOUNTS" additional-items))
 
 (post "/accounts/disconnect"
       (authenticate)

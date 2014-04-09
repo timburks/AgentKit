@@ -12,12 +12,20 @@
 
 (load "rackspace")
 
+(set mongo (AgentMongoDB new))
+(while (mongo connect)
+       (NSLog "waiting for mongodb")
+       (sleep 1))
+(set common (mongo findOne:(dict _id:"common") inCollection:"control.code"))
+(if common (eval (parse (common nu:))))
+
 (set TOP "TOP")
 
 (set rackspace (RSConnection new))
 (set result (perform (rackspace getAccessTokenForUsername:USERNAME apiKey:APIKEY)))
 (rackspace authenticateWithResult:(result JSONValue))
 
+;; create a top node, if none exists
 (def prepare-files ()
      (set mongo (AgentMongoDB new))
      (mongo connect)
@@ -30,13 +38,23 @@
                                name:"files"))
              (mongo insertObject:node
                   intoCollection:"files.nodes")))
-
 (prepare-files)
 
+(set MIMETYPES (dict css:"text/css"
+                      js:"application/javascript"
+                     png:"image/png"
+                     gif:"image/gif"
+                     jpg:"image/jpeg"
+                    m3u8:"application/vnd.apple.mpegurl"
+                      ts:"video/MP2T"))
+
+(function mimetype-for-name (filename)
+          (set pathExtension ((filename pathExtension) lowercaseString))
+          (set mimetype (MIMETYPES pathExtension))
+          (unless mimetype (set mimetype "application/octet-stream"))
+          mimetype)
 
 (set HTTP-200-OK "HTTP/1.1 200 OK")
-
-
 
 (delete "/files/everything"
         (let ((mongo (AgentMongoDB new)))
@@ -127,6 +145,10 @@
             ;(set data (perform (rackspace getDataWithName:(node hash:) inContainer:"agent")))
             (puts (data length))
             (set decrypted (data agent_aesDecryptedDataWithPassword:PASSWORD salt:SALT))
+            
+            (set contentType (mimetype-for-name *path))
+            (RESPONSE setValue:contentType forHTTPHeader:"Content-Type")
+            
             (puts "RETURNING DATA OF LENGTH #{(decrypted length)}")
             decrypted)
            (else
@@ -135,8 +157,13 @@
                     (then (set PATH (+ "/" *path)))
                     (else (set PATH "")))
                 (set UP (PATH stringByDeletingLastPathComponent))
-                (&html (&body (&p (&a href:UP (+ "/" *path)))
-                              (&ul (children map:(do (child) (&li (&a href:(+ PATH "/" (child name:)) (child name:)))))))))))
+                (authenticate)
+                (htmlpage "path"
+                          (topbar-for-app "FILES" "")
+                          (&div class:"row"
+                                (&div class:"medium-8 medium-centered small-12 columns"
+                                      (&p (&a href:UP (+ "/" *path)))
+                                      (&ul (children map:(do (child) (&li (&a href:(+ PATH "/" (child name:)) (child name:))))))))))))
 
 (delete "/*path:"
         (puts "DELETE #{*path}")
@@ -154,7 +181,6 @@
             (else (RESPONSE setStatus:404)
                   "Not Found")))
 
-
 (if NO
     (mongo writeData:data
                named:version
@@ -168,8 +194,6 @@
          (mongo retrieveDataForGridFSFile:version-name
                              inCollection:"appfiles"
                                inDatabase:SITE)))
-
-
 
 (put "/*path:"
      (puts "PUT #{*path}")
@@ -664,8 +688,4 @@
         (puts string)
         "")
 
-;(AgentLibEVHTPServer run)
-(set s ((AgentLibEVHTPServer alloc) initWithService:(AgentHTTPService sharedService)))
-(s setVerbose:YES)
-(s run)
-
+(AgentLibEVHTPServer run)
