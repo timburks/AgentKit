@@ -24,7 +24,6 @@
       ((NSDateFormatter alloc) init))
  setDateFormat:"EEE, d MMM yyyy hh:mm:ss ZZZ")
 
-
 (function oid (string)
           ((AgentBSONObjectID alloc) initWithString:string))
 
@@ -89,17 +88,12 @@
                                          (do (app)
                                              (&div class:"large-4 columns end"
                                                    (&div class:"panel" style:"margin:5px"
-                                                         (progn
-                                                               (if (and (app path:) ((app path:) length))
-                                                                   (then (set link (+ "/" (app path:))))
-                                                                   (else (set link (+ "http://" (((app domains:) componentsSeparatedByString:" ") 0)))))
-                                                               (&div
-                                                                    (&h3 (&a href:link (app name:)))
-                                                                    (&p (app description:))
-                                                                    (&p (&a href:(+ "/chief/apps/manage/" (app _id:)) "Manage it."))
-                                                                    ))))))
-                                    )))
-                         ))
+                                                         (progn (if (and (app path:) ((app path:) length))
+                                                                    (then (set link (+ "/" (app path:))))
+                                                                    (else (set link (+ "http://" (((app domains:) componentsSeparatedByString:" ") 0)))))
+                                                                (&div (&h3 (&a href:link (app name:)))
+                                                                      (&p (app description:))
+                                                                      (&p (&a href:(+ "/chief/apps/manage/" (app _id:)) "Manage it.")))))))))))))
          (else nil)))
 
 (get "/chief/apps/add"
@@ -128,18 +122,48 @@
                                       " or "
                                       (&a href:"/chief" "Cancel")))))))
 
-(function add-app (app)
-          (mongo insertObject:app intoCollection:"control.apps"))
+(def add-app (app)
+     (mongo insertObject:app intoCollection:"control.apps"))
+
+(def add-version (app appfile-name appfile-data)
+     (set version ((AgentUUID new) stringValue))
+     (mongo writeData:appfile-data
+                named:version
+         withMIMEType:"application/zip"
+         inCollection:"appfiles"
+           inDatabase:"control")
+     (set version
+          (dict version:version
+               filename:appfile-name
+             created_at:(NSDate date)))
+     
+     (set versions (or (app versions:) (array)))
+     (versions addObject:version)
+     (set update (dict versions:versions))
+     (mongo updateObject:(dict $set:update)
+            inCollection:"control.apps"
+           withCondition:(dict _id:(app _id:))
+       insertIfNecessary:NO
+   updateMultipleEntries:NO)
+     version)
+
+(def perform (request)
+     (set result (NSURLConnection sendSynchronousRequest:request returningResponse:(set responsep (NuReference new)) error:(set errorp (NuReference new))))
+     (set string ((NSString alloc) initWithData:result encoding:NSUTF8StringEncoding))
+     (puts "#{((responsep value) statusCode)}: #{string}")
+     result)
 
 (post "/chief/apps/add"
       (require-user)
-      (set app (dict name:((REQUEST post) name:)
-                     path:((REQUEST post) path:)
-                  domains:((REQUEST post) domains:)
-              description:((REQUEST post) description:)
-                  workers:(((REQUEST post) workers:) intValue)
-                 owner_id:(account _id:)))
-      (set appid (add-app app))
+      (set path "http://localhost:2010/control/api/apps")
+      (set URL (NSURL URLWithString:path))
+      (set request (NSMutableURLRequest requestWithURL:URL))
+      (request setHTTPMethod:"POST")
+      (request setHTTPBody:(REQUEST body))
+      (set auth (("admin:master123" dataUsingEncoding:NSUTF8StringEncoding) agent_base64EncodedString))
+      (request setValue:"BASIC #{auth}" forHTTPHeaderField:"Authorization")
+      (set result (NSURLConnection sendSynchronousRequest:request returningResponse:(set responsep (NuReference new)) error:(set errorp (NuReference new))))
+      (set appid ((NSString alloc) initWithData:result encoding:NSUTF8StringEncoding))
       (RESPONSE redirectResponseToLocation:(+ "/chief/apps/manage/" appid)))
 
 (get "/chief/apps/manage/appid:"
@@ -206,7 +230,15 @@
      (set appid ((REQUEST bindings) appid:))
      (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
      (unless app (return nil))
-     (halt-app-deployment app)
+     
+     (set path "http://localhost:2010/control/api/stop/#{appid}")
+     (set URL (NSURL URLWithString:path))
+     (set request (NSMutableURLRequest requestWithURL:URL))
+     (request setHTTPMethod:"POST")
+     (request setHTTPBody:(REQUEST body))
+     (set auth (("admin:master123" dataUsingEncoding:NSUTF8StringEncoding) agent_base64EncodedString))
+     (request setValue:"BASIC #{auth}" forHTTPHeaderField:"Authorization")
+     (set result (NSURLConnection sendSynchronousRequest:request returningResponse:(set responsep (NuReference new)) error:(set errorp (NuReference new))))
      (RESPONSE redirectResponseToLocation:(+ "/chief/apps/manage/" appid)))
 
 (get "/chief/apps/manage/delete/appid:/version:"
@@ -235,7 +267,16 @@
      (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
      (unless app (return nil))
      (set version ((REQUEST bindings) version:))
-     (deploy-version app version)
+     
+     (set path "http://localhost:2010/control/api/deploy/#{appid}/#{version}")
+     (set URL (NSURL URLWithString:path))
+     (set request (NSMutableURLRequest requestWithURL:URL))
+     (request setHTTPMethod:"POST")
+     (request setHTTPBody:(REQUEST body))
+     (set auth (("admin:master123" dataUsingEncoding:NSUTF8StringEncoding) agent_base64EncodedString))
+     (request setValue:"BASIC #{auth}" forHTTPHeaderField:"Authorization")
+     (set result (NSURLConnection sendSynchronousRequest:request returningResponse:(set responsep (NuReference new)) error:(set errorp (NuReference new))))
+     
      (RESPONSE redirectResponseToLocation:(+ "/chief/apps/manage/" appid)))
 
 (post "/chief/apps/upload/appid:"
@@ -344,7 +385,7 @@
                                 (&div class:"row"
                                       (&div class:"large-12 columns"
                                             (&h2 "It's gone.")))))))
-      (else (RESPONSE redirectResponseToLocation:(+ "/chief/apps/manage/" appid))))
+      (else (RESPONSE redirectResponseToLocation:"/chief")))
 
 (get "/chief/apps/manage/appid:/container:"
      (require-user)
@@ -421,7 +462,7 @@
                                                 (&div (&h4 (document _id:))
                                                       (&pre (document description))))))))))
 
-(get "/chief/nginx.conf"
+(get "/chief/nginx"
      (require-user)
      (REQUEST setContentType:"text/html")
      (htmlpage "AgentBox nginx.conf"
@@ -432,8 +473,14 @@
                                  (&pre class:"code" (NSString stringWithContentsOfFile:"/etc/nginx/nginx.conf")))))))
 
 (get "/chief/restart-nginx"
-     ;(require-user)
-     ;(restart-nginx)
+     (require-user)
+     (set path "http://localhost:2010/control/api/nginx/restart")
+     (set URL (NSURL URLWithString:path))
+     (set request (NSMutableURLRequest requestWithURL:URL))
+     (request setHTTPMethod:"POST")
+     (set auth (("admin:master123" dataUsingEncoding:NSUTF8StringEncoding) agent_base64EncodedString))
+     (request setValue:"BASIC #{auth}" forHTTPHeaderField:"Authorization")
+     (set result (NSURLConnection sendSynchronousRequest:request returningResponse:(set responsep (NuReference new)) error:(set errorp (NuReference new))))     
      (RESPONSE redirectResponseToLocation:"/chief"))
 
 ;;; site management

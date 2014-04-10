@@ -49,22 +49,30 @@
                                     (if (defined apps)
                                         (&ul class:"left"
                                              (&li class:"divider")
-                                             (&li (&a href:"/control/nginx.conf" "nginx"))
+                                             (&li class:"has-dropdown" (&a href:"#" "system...")
+                                                  (&ul class:"dropdown"
+                                                       (&li (&a href:"/control/nginx.conf" "nginx"))
+                                                       (&li class:"divider")
+                                                       (&li (&a href:"/control/browse" "mongodb"))))
                                              (&li class:"divider")
-                                             (&li (&a href:"/control/browse" "mongodb"))
-                                             (&li class:"divider")
-                                             (&li class:"has-dropdown" (&a href:"#" "apps")
+                                             (&li class:"has-dropdown" (&a href:"#" "apps...")
                                                   (&ul class:"dropdown"
                                                        (apps map:
                                                              (do (app)
                                                                  (&li (&a href:(+ "/control/apps/manage/" (app _id:))
                                                                           (app name:)))))
                                                        (&li class:"divider")
-                                                       (&li (&a href:"/control/apps/add" "Add an app"))))))
+                                                       (&li (&a href:"/control/apps/add" "Add an app"))))
+                                             (&li class:"divider")
+                                             (&li (&a href:"/accounts" "ACCOUNTS"))
+                                             (&li class:"divider")
+                                             (&li (&a href:"/files" "FILES"))
+                                             (&li class:"divider")
+                                             (&li (&a href:"/mdm" "MDM"))
+                                             ))
                                     (&ul class:"right"
                                          (if (and (defined account) account)
-                                             (then (&& (&li (&a href:"#" "signed in as " (account username:)))
-                                                       (&li (&a href:"/accounts" " accounts"))
-                                                       (&li (&a href:"/control/restart" " restart"))))
+                                             (then (&& (&li (&a href:"#" (account username:)))
+                                                       (&li (&a href:"/control/restart" " RESTART"))))
                                              (else (&li href:"/signin" "sign in")))))))))
 

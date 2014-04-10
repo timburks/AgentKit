@@ -1,3 +1,5 @@
+(load "AgentJSON")
+
 (set appname "chief")
 
 (set agentbox "http://alpha.agent.io")
@@ -9,6 +11,7 @@
       (SH "cd build; zip -r #{appname}.zip #{appname}.app"))
 
 (task "pub" => "zip" is
+      ;; upload a new app version
       (set command (+ "curl -s " agentbox "/control/api/"
                       appname
                       " -T build/#{appname}.zip"
@@ -25,6 +28,37 @@
                       " -u " credentials))
       (set result (NSString stringWithShellCommand:command))
       (puts "deployment result: #{result}"))
+
+
+(task "list" is
+      (set command (+ "curl -s " agentbox "/control/api/apps"
+                      " -u " credentials))
+      (puts command)
+      (set results (NSString stringWithShellCommand:command))
+      (global APPS (results agent_JSONValue))
+      (puts "apps: #{(APPS description)}"))
+
+(task "delete" => "list" is
+      (set app (APPS find:(do (app) (eq (app name:) "chief"))))
+      (if app
+          (then (set command (+ "curl -s " agentbox "/control/api/apps/" (app _id:)
+                                " -X DELETE"
+                                " -u " credentials))
+                (puts command)
+                (set results (NSString stringWithShellCommand:command))
+                (puts "apps: #{(results description)}"))
+          (else "App not found")))
+
+(task "create" is
+      (set command (+ "curl -s "
+                      " -d \"name=chief&path=chief&workers=1&domains=&description=\""
+                      " -X POST"
+                      " " agentbox "/control/api/apps"
+                      " -u " credentials))
+      (puts command)
+      (set results (NSString stringWithShellCommand:command))
+      (puts "apps: #{(results description)}"))
+
 
 (task "default" => "zip")
 

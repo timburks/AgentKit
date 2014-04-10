@@ -31,7 +31,6 @@
                (set parts (credentials componentsSeparatedByString:":"))
                (set username (parts 0))
                (set password (parts 1))
-
                (set user (mongo findOne:(dict username:username
                                               password:(password md5HashWithSalt:PASSWORD_SALT))
                              inCollection:"accounts.users"))
@@ -251,15 +250,25 @@
        `(progn (RESPONSE setValue:"application/xml" forHTTPHeader:"Content-Type")
                ((progn ,@*body) XMLPropertyListRepresentation)))
 
+;; API API API
+
 ;;=== Me ===
 
+;; get account information for the authenticated user
 (get "/control/api/account"
      (auth (account removeObjectForKey:"password")
            (account removeObjectForKey:"_id")
            (dict message:"OK" account:account)))
 
+;; restart NGINX
+(post "/control/api/nginx/restart"
+     (require-authorization)
+     (restart-nginx)
+     "OK")
+
 ;;=== Administrators ===
 
+;; create an administrator if none exists
 (post "/control/api/admin"
       (noauth (set admin ((REQUEST body) propertyListValue))
                (mongo-connect)
@@ -273,6 +282,13 @@
                               intoCollection:(+ SITE ".users"))
                          (dict message:"ok")))))
 
+;; get a list of apps
+(get "/control/api/apps"
+      (require-authorization)
+      (set apps (mongo findArray:nil inCollection:(+ SITE ".apps")))
+      (apps agent_JSONRepresentation))
+
+;; add a version of an app
 (post "/control/api/appname:"
       (require-authorization)
       (set app (mongo findOne:(dict name:appname) inCollection:(+ SITE ".apps")))
@@ -287,6 +303,28 @@
                 (version version:))
           (else "error: invalid app data")))
 
+;; delete a version of an app
+(delete "/control/api/apps/appid:/version:"
+     (require-user)
+     (set appid ((REQUEST bindings) appid:))
+     (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
+     (unless app (return nil))
+     (set version ((REQUEST bindings) version:))
+     (set versions (app versions:))
+     (set versions (versions select:
+                             (do (v) (ne (v version:) version))))
+     (set update (dict $set:(dict versions:versions)))
+     (mongo updateObject:update
+            inCollection:"control.apps"
+           withCondition:(dict _id:(oid appid))
+       insertIfNecessary:NO
+   updateMultipleEntries:NO)
+     (mongo removeFile:version
+          inCollection:"appfiles"
+            inDatabase:"control")
+     "OK")
+
+;; deploy an app version
 (post "/control/api/appname:/deploy/version:"
       (require-authorization)
       (set app (mongo findOne:(dict name:appname) inCollection:(+ SITE ".apps")))
@@ -295,6 +333,57 @@
       (if (deploy-version app version)
           (then "deployed")
           (else "error: unable to deploy app")))
+
+
+;; add an app
+(post "/control/api/apps"
+(NSLog "create an app #{((REQUEST post) description)}")
+     (require-authorization)
+     (set app (dict name:((REQUEST post) name:)
+                    path:((REQUEST post) path:)
+                 domains:((REQUEST post) domains:)
+             description:((REQUEST post) description:)
+                 workers:(((REQUEST post) workers:) intValue)
+                owner_id:(account _id:)))
+   (puts (app description))
+     (set appid ((add-app app) stringValue))
+     appid)
+
+;; delete an entire app
+(delete "/control/api/apps/appid:"
+      (require-authorization)
+      (set appid ((REQUEST bindings) appid:))
+      (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
+      (unless app (return nil))
+(NSLog "removing app #(app description)")
+      (halt-app-deployment app)
+      (mongo removeWithCondition:(dict _id:(oid appid)) fromCollection:"control.apps")
+      ;; TODO stop and remove the app workers
+      ((app versions:) each:
+       (do (version)
+           (mongo removeFile:(version version:)
+                inCollection:"appfiles"
+                  inDatabase:"control")))
+      "OK")
+
+;; halt a running app
+(post "/control/api/stop/appid:"
+     (require-authorization)
+     (set appid ((REQUEST bindings) appid:))
+     (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
+     (unless app (return nil))
+     (halt-app-deployment app)
+     "OK")
+
+;; deploy an app version
+(post "/control/api/deploy/appid:/version:"
+     (require-authorization)
+     (set appid ((REQUEST bindings) appid:))
+     (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
+     (unless app (return nil))
+     (set version ((REQUEST bindings) version:))
+     (deploy-version app version)
+     "OK")
 
 (get "/control/apps/edit/appid:"
      (require-user)
@@ -404,9 +493,15 @@
                                                     (then (&li (&a href:(+ "/control/apps/manage/" appid "/" container "/upstart.conf") "upstart.conf")))
                                                     (else (+ (&li (&a href:(+ "/control/apps/manage/" appid "/" container "/launchd.plist") "launchd.plist"))
                                                              (&li (&a href:(+ "/control/apps/manage/" appid "/" container "/sandbox.sb") "sandbox.sb")))))
+                                                (&li (&a href:(+ "/control/syslog/" (worker port:)) "syslog.log"))
                                                 (&li (&a href:(+ "/control/apps/manage/" appid "/" container "/stdout.log") "stdout.log"))
                                                 (&li (&a href:(+ "/control/apps/manage/" appid "/" container "/stderr.log") "stderr.log"))))))))
          (else "not found")))
+
+(get "/control/syslog/port:" 
+     (RESPONSE setValue:"text/plain; charset=\"utf-8\"" forHTTPHeader:"Content-Type")
+     (set data (NSData dataWithContentsOfFile:"/var/log/upstart/agentio-worker-#{port}.log"))
+     data)
 
 (get "/control/apps/manage/appid:/container:/file:"
      (require-user)

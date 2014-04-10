@@ -1,6 +1,7 @@
 (load "AgentHTTP")
 (load "AgentCrypto")
 (load "AgentMongoDB")
+(load "AgentJSON")
 
 (set SITE "control")
 (set PASSWORD_SALT "agent.io")
