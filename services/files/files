@@ -45,6 +45,8 @@
                      png:"image/png"
                      gif:"image/gif"
                      jpg:"image/jpeg"
+                     mp3:"audio/mpeg"
+                     m4a:"audio/mp4"
                     m3u8:"application/vnd.apple.mpegurl"
                       ts:"video/MP2T"))
 

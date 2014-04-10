@@ -5,23 +5,731 @@
         (puts "controld must be run as root.")
         (exit -1))
 
-;; configuration
-(load "components/config")
-(load "components/database")
+(load "AgentHTTP")
+(load "AgentCrypto")
+(load "AgentMongoDB")
+(load "AgentJSON")
 
-;; subsystems
-(load "components/upstart")
-(load "components/nginx")
+(set SITE "control")
+(set PASSWORD_SALT "agent.io")
+(set CONTROL-PATH "/home/control")
 
-;; application logic
-(load "components/agentbox")
+(class NSString
+ (- (id) md5HashWithSalt:(id) salt is
+    (((self dataUsingEncoding:NSUTF8StringEncoding)
+      agent_hmacMd5DataWithKey:(salt dataUsingEncoding:NSUTF8StringEncoding))
+     agent_hexEncodedString)))
+(macro get-user (REQUEST)
+       `(progn (set screen_name nil)
+               (set session nil)
+               (set user nil)
+               (if (set token ((,REQUEST cookies) session:))
+                   (set mongo (AgentMongoDB new))
+                   (mongo connect)
+                   (set session (mongo findOne:(dict cookie:token) inCollection:"accounts.sessions"))
+	 	   (if session (then (set user (mongo findOne:(dict _id:(session account_id:)) inCollection:"accounts.users")))
+                               (else (set user nil)))
+                   (set screen_name (session username:)))
+               user))
 
-;; page handlers
-(load "components/xhtml")
-(load "components/macros")
-(load "components/pages")
-(load "components/signin")
 
-(files "/control/*path:" "public")
+;; mongodb administration
+;; > use admin
+;; > db.addUser("root", "radtastical")
+;; > use agentbox
+;; > db.addUser("agentbox", "xme")
+;;
+;; run mongod with --auth option
+
+(set mongo (AgentMongoDB new))
+
+;; below see the MongoHQ configuration
+;; username: timburks password: mongohqtim
+;(set HOSTINFO (dict host:"184.73.224.5" port:27067))
+
+;; MongoLab
+;; username: admin password: rad123 account: tim@radtastical.com
+;(set HOSTINFO (dict host:"184.106.200.68" port:27007))
+
+;; localhost
+;(set HOSTINFO (dict))
+;(set HOSTINFO (dict host:"127.0.0.1" port:20101))
+
+(while (mongo connect)
+       (NSLog "deus: waiting for database")
+       (sleep 1))
+
+;(mongo connectWithOptions:HOSTINFO)
+;(mongo authenticateUser:"agentbox" withPassword:"xme" forDatabase:SITE)
+
+(function oid (string)
+     ((AgentBSONObjectID alloc) initWithString:string))
+
+(function set-property (key value)
+     (mongo updateObject:(dict _id:key value:value)
+            inCollection:(+ SITE ".properties")
+            withCondition:(dict _id:key)
+            insertIfNecessary:YES
+            updateMultipleEntries:NO))
+
+(function get-property (key)
+     (set result (mongo findOne:(dict _id:key) inCollection:(+ SITE ".properties")))
+     (result value:))
+
+
+
+(function generate-upstart-config (CONTAINER NAME PORT APP) <<-END
+#
+# AUTOMATICALLY GENERATED 
+#
+start on runlevel [2345]
+setuid control
+chdir #{CONTROL-PATH}/workers/#{CONTAINER}/#{NAME}.app
+env AGENT_DOMAINS='#{(APP domains:)}'
+env AGENT_HOST='#{(NSString stringWithShellCommand:"hostname")}'
+env AGENT_NAME='#{(APP name:)}'
+env AGENT_PATH='#{(APP path:)}'
+exec ./#{NAME} -p #{PORT}
+respawn
+respawn limit 10 90
+END)
+
+(function NGINX-CONF (apps) <<-END
+#
+# AgentBox nginx configuration
+# this file was automatically generated
+#
+worker_processes  8;
+
+events {
+    worker_connections  1024;
+}
+
+http {
+    log_format control '$msec|$time_local|$host|$request|$status|$bytes_sent|$request_time|$remote_addr|$http_referer|$http_user_agent|||';
+    access_log #{CONTROL-PATH}/var/nginx-access.log control;
+    error_log #{CONTROL-PATH}/var/nginx-error.log debug;
+
+    large_client_header_buffers 4 32k;
+
+    gzip on;
+    gzip_proxied any;
+
+    types_hash_bucket_size 64;
+    types {
+        application/x-mpegURL                   m3u8;
+        video/MP2T                              ts;
+        video/mp4                               mp4;
+        application/xml                         xml;
+        image/gif                               gif;
+        image/jpeg                              jpg;
+        image/png                               png;
+        image/bmp                               bmp;
+        image/x-icon                            ico;
+        text/css                                css;
+        text/html                               html;
+        text/plain                              txt;
+        application/pdf                         pdf;
+        text/xml                                plist;
+        application/octet-stream                dmg;
+        application/octet-stream                ipa;
+        application/octet-stream                mobileprovision;
+        application/x-apple-aspen-config        mobileconfig;
+    }
+    default_type       text/html;
+
+    server_names_hash_bucket_size 64;
+    server_names_hash_max_size 8192;
+#{(upstream-servers-for-apps apps)}
+
+    server {
+        listen          80;
+        listen          443 ssl;
+        ssl_certificate     #{CONTROL-PATH}/control/etc/wildcard_agent_io.crt;
+        ssl_certificate_key #{CONTROL-PATH}/control/etc/wildcard_agent_io.key;
+        server_name     ~^(.*)$;
+        root #{CONTROL-PATH}/public;
+        try_files $uri.html $uri $uri/ =404;
+        error_page 404  /404.html;
+        error_page 403  /403.html;
+        error_page 502  /502.html;
+        location /control/ {
+            proxy_set_header Host $host;
+            proxy_pass  http://127.0.0.1:2010;
+        }
+#{(locations-for-apps apps)}
+        client_max_body_size 10M;
+    }
+#{(servers-for-apps apps)}
+}
+END)
+
+(function servers-for-apps (apps)
+          (set RESULTS "")
+          (apps each:
+                (do (app)
+                    (if (and (app domains:) ((app domains:) length) (((app deployment:) workers:) count))
+                        (then (set server-name (app domains:))
+                              (RESULTS << <<-END
+
+    server {
+        listen          80;
+        server_name     #{server-name};
+        root #{CONTROL-PATH}/public;
+        try_files $uri.html $uri $uri/ =404;
+        error_page 404  /404.html;
+        error_page 403  /403.html;
+        error_page 502  /502.html;
+        location / {
+            proxy_set_header Host $host;
+            proxy_pass http://#{(app _id:)};
+            proxy_set_header X-Forwarded-For $remote_addr;
+        }
+    }
+END)))))
+          RESULTS)
+
+(function locations-for-apps (apps)
+          (set RESULTS "")
+          (apps each:
+                (do (app)
+                    (if (and (app path:) ((app path:) length) (((app deployment:) workers:) count))
+                        (then (RESULTS << (+ "        # " (app name:) "\n"
+                                             "        location /" (app path:) "/ {\n"
+                                             "            proxy_set_header Host $host;\n"
+                                             "            proxy_pass http://" (app _id:) ";\n"
+                                             "            proxy_set_header X-Forwarded-For $remote_addr;\n"
+                                             "        }\n"))))))
+          RESULTS)
+
+(function upstream-servers-for-apps (apps)
+          (set RESULTS "")
+          (apps each:
+                (do (app)
+                    (if (((app deployment:) workers:) count)
+                        (then (RESULTS << (+ "\n"
+                                             "    # " (app name:) "\n"
+                                             "    upstream " (app _id:) "{\n"
+                                             ((((app deployment:) workers:) map:
+                                               (do (worker)
+                                                   (+ "        server 127.0.0.1:" (worker port:) ";")))
+                                              componentsJoinedByString:"\n")
+                                             "\n    }"))))))
+          RESULTS)
+
+(function nginx-config-with-services (apps)
+          (set config (NGINX-CONF apps))
+          config)
+
+(function nginx-conf-path ()
+          (if (eq (uname) "Linux")
+              (then "/etc/nginx/nginx.conf")
+              (else "#{CONTROL-PATH}/nginx/nginx.conf")))
+
+(function nginx-path ()
+          (if (eq (uname) "Linux")
+              (then "/usr/sbin/nginx")
+              (else "/usr/local/nginx/sbin/nginx")))
+
+(function restart-nginx ()
+          ((NSFileManager defaultManager) removeItemAtPath:(nginx-conf-path) error:nil)
+          (set apps (mongo findArray:nil inCollection:(+ SITE ".apps")))
+          ((nginx-config-with-services apps)
+           writeToFile:(nginx-conf-path) atomically:YES)
+          (system "#{(nginx-path)} -s reload -c #{(nginx-conf-path)} -p #{CONTROL-PATH}/nginx/"))
+
+(function prime-nginx ()
+          ((NSFileManager defaultManager)
+           removeItemAtPath:(nginx-conf-path) error:nil)
+          ((nginx-config-with-services (array))
+           writeToFile:(nginx-conf-path) atomically:YES)
+          ;; control redirect
+          ((&a href:(+ "/control") "OK, Continue")
+           writeToFile:"#{CONTROL-PATH}/public/restart.html" atomically:NO))
+
+
+(function add-app (app)
+          (mongo insertObject:app intoCollection:(+ SITE ".apps")))
+
+(function add-version (app appfile-name appfile-data)
+          (set version ((AgentUUID new) stringValue))
+          (mongo writeData:appfile-data
+                     named:version
+              withMIMEType:"application/zip"
+              inCollection:"appfiles"
+                inDatabase:SITE)
+          (set version
+               (dict version:version
+                    filename:appfile-name
+                  created_at:(NSDate date)))
+          
+          (set versions (or (app versions:) (array)))
+          (versions addObject:version)
+          (set update (dict versions:versions))
+          (mongo updateObject:(dict $set:update)
+                 inCollection:(+ SITE ".apps")
+                withCondition:(dict _id:(app _id:))
+            insertIfNecessary:NO
+        updateMultipleEntries:NO)
+          (puts "updating")
+          (puts (update description))
+          (puts "for app")
+          (puts (app description))
+          version)
+
+(function get-busy-ports ()
+          (set apps (mongo findArray:nil inCollection:(+ SITE ".apps")))
+          (set ports (NSMutableSet set))
+          (apps each:
+                (do (app)
+                    (((app deployment:) workers:) each:
+                     (do (worker) (ports addObject:(worker port:))))))
+          ports)
+
+(function get-next-available-port (busy-ports start)
+          (set port (+ 1 start))
+          (while (busy-ports containsObject:port)
+                 (set port (+ port 1)))
+          port)
+
+(function deploy-version (app version-name)
+          (set versions (app versions:))
+          (set versions (versions select:
+                                  (do (version) (eq (version version:) version-name))))
+          (if (eq (versions count) 1)
+              (then (set appfile-name ((versions 0) filename:))
+                    (set app-name (appfile-name stringByDeletingPathExtension))
+                    (puts (+ "deploying " version-name " with " appfile-name))
+                    (if (app deployment:) (halt-app-deployment app))
+                    (set busy-ports (get-busy-ports))
+                    (set port 9000)
+                    (set workers (array))
+                    (unless (set worker-count (app workers:))
+                            (set worker-count 1))
+                    ((worker-count) times:
+                     (do (i)
+                         (set container ((AgentUUID new) stringValue))
+                         (set path (+ CONTROL-PATH "/workers/" container))
+                         (puts "Creating directory at path " path)
+                         (set result
+                              ((NSFileManager defaultManager)
+                               createDirectoryAtPath:path withIntermediateDirectories:YES
+                               attributes:nil error:nil))
+                         (puts (+ "result: " result))
+                         
+                         (set data
+                              (mongo retrieveDataForGridFSFile:version-name
+                                                  inCollection:"appfiles"
+                                                    inDatabase:SITE))
+                         (data writeToFile:(+ path "/" appfile-name) atomically:NO)
+                         
+                         (set command (+ "cd " path "; unzip " appfile-name))
+                         (puts command)
+                         (system command)
+                         ((NSFileManager defaultManager)
+                          createDirectoryAtPath:(+ path "/var") withIntermediateDirectories:YES attributes:nil error:nil)
+                         ("" writeToFile:(+ path "/var/stdout.log") atomically:NO)
+                         ("" writeToFile:(+ path "/var/stderr.log") atomically:NO)
+                         (set command (+ "chmod -R ugo+rX " path))
+                         (puts command)
+                         (system command)
+                         (set command (+ "chown -R control " path "/var"))
+                         (puts command)
+                         (system command)
+                         (set command (+ "chmod -R ug+w " path "/var"))
+                         (puts command)
+                         (system command)
+                         
+                         (set port (get-next-available-port busy-ports port))
+                         
+                         (if (eq (uname) "Linux")
+                             (then (set upstart-config (generate-upstart-config container app-name port app))
+                                   (upstart-config writeToFile:(+ "/etc/init/agentio-worker-" port ".conf") atomically:NO)
+                                   (system (+ "/sbin/initctl start agentio-worker-" port)))
+                             (else (set sandbox-sb (generate-sandbox-description container app-name port))
+                                   (sandbox-sb writeToFile:(+ CONTROL-PATH "/workers/" container "/sandbox.sb") atomically:NO)
+                                   (set launchd-plist (generate-launchd-plist container app-name port))
+                                   (launchd-plist writeToFile:(+ "/Library/LaunchDaemons/net.control.app." port ".plist") atomically:NO)
+                                   (system (+ "launchctl load /Library/LaunchDaemons/net.control.app." port ".plist"))))
+                         (workers << (dict port:port host:"localhost" container:container))))
+                    
+                    (set deployment (dict version:version-name
+                                             name:app-name
+                                          workers:workers))
+                    (mongo updateObject:(dict $set:(dict deployment:deployment))
+                           inCollection:(+ SITE ".apps")
+                          withCondition:(dict _id:(app _id:))
+                      insertIfNecessary:NO
+                  updateMultipleEntries:NO)
+                    (restart-nginx)
+                    deployment)
+              (else
+                   (puts (+ "unable to deploy; can't find " version-name))
+                   nil)))
+
+(function redeploy ()
+          (set apps (mongo findArray:nil inCollection:(+ SITE ".apps")))
+          (apps each:
+                (do (app)
+                    (puts (app name:))
+                    (set deployment (app deployment:))
+                    (set version-name (deployment version:))
+                    (set appfile-name nil)
+                    (puts "version name: #{version-name}")
+                    ((app versions:) each:
+                     (do (version)
+                         (if (eq version-name (version version:))
+                             (set appfile-name (version filename:)))))
+                    (puts "appfile name: #{appfile-name}")
+                    (if appfile-name
+                        (then ((deployment workers:) each:
+                               (do (worker)
+                                   (puts "WORKER #{(worker description)}")
+                                   (set container (worker container:))
+                                   ;; create container directory
+                                   (set path (+ CONTROL-PATH "/workers/" container))
+                                   (puts "Creating directory at path " path)
+                                   (set result
+                                        ((NSFileManager defaultManager)
+                                         createDirectoryAtPath:path withIntermediateDirectories:YES
+                                         attributes:nil error:nil))
+                                   (puts (+ "result: " result))
+                                   ;; write app zip file into container
+                                   (set data
+                                        (mongo retrieveDataForGridFSFile:version-name
+                                                            inCollection:"appfiles"
+                                                              inDatabase:SITE))
+                                   (data writeToFile:(+ path "/" appfile-name) atomically:NO)
+                                   ;; unzip app
+                                   (set command (+ "cd " path "; unzip " appfile-name))
+                                   (puts command)
+                                   (system command)
+                                   ;; create support directories
+                                   ((NSFileManager defaultManager)
+                                    createDirectoryAtPath:(+ path "/var") withIntermediateDirectories:YES attributes:nil error:nil)
+                                   ("" writeToFile:(+ path "/var/stdout.log") atomically:NO)
+                                   ("" writeToFile:(+ path "/var/stderr.log") atomically:NO)
+                                   (set command (+ "chmod -R ugo+rX " path))
+                                   (puts command)
+                                   (system command)
+                                   (set command (+ "chown -R control " path "/var"))
+                                   (puts command)
+                                   (system command)
+                                   (set command (+ "chmod -R ug+w " path "/var"))
+                                   (puts command)
+                                   (system command)
+                                   (set port (worker port:))
+                                   
+                                   (set sandbox-sb (generate-sandbox-description container (app name:) port))
+                                   (sandbox-sb writeToFile:(+ CONTROL-PATH "/workers/" container "/sandbox.sb") atomically:NO)
+                                   
+                                   (set launchd-plist (generate-launchd-plist container (app name:) port))
+                                   (launchd-plist writeToFile:(+ "/Library/LaunchDaemons/net.control.app." port ".plist") atomically:NO)
+                                   (system (+ "launchctl load /Library/LaunchDaemons/net.control.app." port ".plist")))))
+                        (else "version is unknown"))
+                    (puts ((app deployment:) description))
+                    ))
+          (restart-nginx))
+
+(function halt-app-deployment (app)
+          ;; get deployment
+          (set deployment (app deployment:))
+          ;; stop workers
+          ((deployment workers:) each:
+           (do (worker)
+               (if (eq (uname) "Linux")
+                   (then (set port (worker port:))
+                         (set upstart-config-name (+ "/etc/init/agentio-worker-" port ".conf"))
+                         (system (+ "/sbin/initctl stop agentio-worker-" port))
+                         ((NSFileManager defaultManager) removeItemAtPath:upstart-config-name error:nil))
+                   (else (set launchd-plist-name (+ "/Library/LaunchDaemons/net.control.app."
+                                                    (worker port:) ".plist"))
+                         (system (+ "launchctl unload " launchd-plist-name))
+                         ((NSFileManager defaultManager) removeItemAtPath:launchd-plist-name error:nil)))
+               (if (set container (worker container:))
+                   ((NSFileManager defaultManager) removeItemAtPath:(+ CONTROL-PATH "/workers/" container)
+                    error:nil))))
+          ;; remove deployment from database
+          (mongo updateObject:(dict $unset:(dict deployment:1))
+                 inCollection:(+ SITE ".apps")
+                withCondition:(dict _id:(app _id:))
+            insertIfNecessary:NO
+        updateMultipleEntries:NO)
+          (restart-nginx))
+
+
+
+
+;; helpers
+
+((set date-formatter
+      ((NSDateFormatter alloc) init))
+ setDateFormat:"EEEE MMMM d, yyyy")
+
+((set rss-date-formatter
+      ((NSDateFormatter alloc) init))
+ setDateFormat:"EEE, d MMM yyyy hh:mm:ss ZZZ")
+
+(macro mongo-connect ()
+       `(progn (unless (defined mongo)
+                       (set mongo (RadMongoDB new))
+                       (mongo connect))))
+
+;; basic site structure
+
+(macro htmlpage (title *body)
+       `(progn (REQUEST setContentType:"text/html")
+               (unless (defined account) (set account (get-user REQUEST)))
+               (&html class:"no-js" lang:"en"
+                      (&head (&meta charset:"utf-8")
+                             (&meta name:"viewport" content:"width=device-width, initial-scale=1.0")
+                             (&meta name:"description" content:"My Agent on the Internet")
+                             (&meta name:"keywords" content:"agent,personal")
+                             (&meta name:"author" content:"Tim Burks")
+                             (&title ,title)
+                             (&link rel:"stylesheet" href:"/foundation-5/css/foundation.min.css")
+                             (&script src:"/foundation-5/js/vendor/modernizr.js"))
+                      (&body ,@*body
+                             ;(&div class:"row" (&div class:"large-12 columns" (&hr) "alpha.agent.io"))
+                             (&script src:"/foundation-5/js/vendor/jquery.js")
+                             (&script src:"/foundation-5/js/foundation.min.js")
+                             (&script "$(document).foundation();")))))
+
+(macro navbar (name)
+       `(progn
+              (if (and (defined account) account)
+                  (set apps (mongo findArray:(dict $query:(dict) ;; (dict owner_id:(account _id:))
+                                                 $orderby:(dict name:1))
+                                inCollection:(+ SITE ".apps"))))
+              (&div class:"contain-to-grid" style:"margin-bottom:20px"
+                    (&nav class:"top-bar" data-topbar:1
+                          (&ul class:"title-area"
+                               (&li class:"name" (&h1 (&a href:"/control" "CONTROL")))
+                               (&li class:"toggle-topbar menu-icon"
+                                    (&a href:"#" (&span "Menu"))))
+                          (&section class:"top-bar-section"
+                                    (if (defined apps)
+                                        (&ul class:"left"
+                                             (&li class:"divider")
+                                             (&li class:"has-dropdown" (&a href:"#" "system...")
+                                                  (&ul class:"dropdown"
+                                                       (&li (&a href:"/control/nginx.conf" "nginx"))
+                                                       (&li class:"divider")
+                                                       (&li (&a href:"/control/browse" "mongodb"))))
+                                             (&li class:"divider")
+                                             (&li class:"has-dropdown" (&a href:"#" "apps...")
+                                                  (&ul class:"dropdown"
+                                                       (apps map:
+                                                             (do (app)
+                                                                 (&li (&a href:(+ "/control/apps/manage/" (app _id:))
+                                                                          (app name:)))))
+                                                       (&li class:"divider")
+                                                       (&li (&a href:"/control/apps/add" "Add an app"))))
+                                             (&li class:"divider")
+                                             (&li (&a href:"/accounts" "ACCOUNTS"))
+                                             (&li class:"divider")
+                                             (&li (&a href:"/files" "FILES"))
+                                             (&li class:"divider")
+                                             (&li (&a href:"/mdm" "MDM"))
+                                             ))
+                                    (&ul class:"right"
+                                         (if (and (defined account) account)
+                                             (then (&& (&li (&a href:"#" (account username:)))
+                                                       (&li (&a href:"/control/restart" " RESTART"))))
+                                             (else (&li href:"/signin" "sign in")))))))))
+
+
+
+
+
+
+
+
+
+(macro require-authorization ()
+       `(progn (set authorization ((REQUEST headers) Authorization:))
+               (set parts (authorization componentsSeparatedByString:" "))
+               (set credentials (NSString stringWithData:(NSData agent_dataWithBase64EncodedString:(parts 1))
+                                                encoding:NSUTF8StringEncoding))
+               (set parts (credentials componentsSeparatedByString:":"))
+               (set username (parts 0))
+               (set password (parts 1))
+               (set user (mongo findOne:(dict username:username
+                                              password:(password md5HashWithSalt:PASSWORD_SALT))
+                             inCollection:"accounts.users"))
+               (set account user)
+               (unless account (return "unauthorized"))))
+
+
+;; this macro wraps api handlers and generates formatted responses from the results.
+(macro auth (*body) ;; the body should return a (dict)
+       `(progn (RESPONSE setValue:"application/xml" forHTTPHeader:"Content-Type")
+               (set authorization ((REQUEST headers) Authorization:))
+               (set parts (authorization componentsSeparatedByString:" "))
+               (case (parts 0)
+                     ("Basic" (set credentials (NSString stringWithData:(NSData agent_dataWithBase64EncodedString:(parts 1))
+                                                               encoding:NSUTF8StringEncoding))
+                              (set parts (credentials componentsSeparatedByString:":"))
+                              (set username (parts 0))
+                              (set password (parts 1))
+                              (mongo-connect)
+                              (set account (mongo findOne:(dict username:username
+                                                                password:(password md5HashWithSalt:PASSWORD_SALT))
+                                             inCollection:"accounts.users")))
+                     ("Bearer" (set secret (parts 1))
+                               (mongo-connect)
+                               (set account (mongo findOne:(dict secret:secret)
+                                              inCollection:"accounts.users")))
+                     (else (set account (get-user REQUEST))))
+               (if account
+                   (then ((progn ,@*body) XMLPropertyListRepresentation))
+                   (else (RESPONSE setStatus:401)
+                         ((dict message:"Unauthorized") XMLPropertyListRepresentation)))))
+
+;; API API API
+
+(get "/control/api/whoami"
+     (require-authorization)
+     (account description))
+
+;;=== Me ===
+
+;; get account information for the authenticated user
+(get "/control/api/account"
+     (auth (account removeObjectForKey:"password")
+           (account removeObjectForKey:"_id")
+           (dict message:"OK" account:account)))
+
+;; restart NGINX
+(post "/control/api/nginx/restart"
+     (require-authorization)
+     (restart-nginx)
+     "OK")
+
+;;=== Administrators ===
+
+;; create an administrator if none exists
+(post "/control/api/admin"
+      (noauth (set admin ((REQUEST body) propertyListValue))
+               (mongo-connect)
+               (if (mongo countWithCondition:(dict) inCollection:"users" inDatabase:"accounts")
+                   (then (dict message:"Admin already exists"))
+                   (else (mongo insertObject:(dict username:(admin username:)
+                                                   password:((admin password:) md5HashWithSalt:PASSWORD_SALT)
+                                                     secret:((RadUUID new) stringValue)
+                                                   verified:YES
+                                                      admin:YES)
+                              intoCollection:(+ SITE ".users"))
+                         (dict message:"ok")))))
+
+;; get a list of apps
+(get "/control/api/apps"
+      (require-authorization)
+      (set apps (mongo findArray:nil inCollection:(+ SITE ".apps")))
+      (apps agent_JSONRepresentation))
+
+;; add a version of an app
+(post "/control/api/appname:"
+      (require-authorization)
+      (set app (mongo findOne:(dict name:appname) inCollection:(+ SITE ".apps")))
+      (unless app (return "error: app #{appname} not found"))
+      (puts "uploading")
+      (if (and (set appfile-data (REQUEST body))
+               (appfile-data length)
+               (set appfile-name (+ (app name:) ".zip")))
+          (then ;; save appfile
+                (puts "saving")
+                (set version (add-version app appfile-name appfile-data))
+                (version version:))
+          (else "error: invalid app data")))
+
+;; delete a version of an app
+(delete "/control/api/apps/appid:/version:"
+     (require-authorization)
+     (set appid ((REQUEST bindings) appid:))
+     (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
+     (unless app (return nil))
+     (set version ((REQUEST bindings) version:))
+     (set versions (app versions:))
+     (set versions (versions select:
+                             (do (v) (ne (v version:) version))))
+     (set update (dict $set:(dict versions:versions)))
+     (mongo updateObject:update
+            inCollection:"control.apps"
+           withCondition:(dict _id:(oid appid))
+       insertIfNecessary:NO
+   updateMultipleEntries:NO)
+     (mongo removeFile:version
+          inCollection:"appfiles"
+            inDatabase:"control")
+     "OK")
+
+;; deploy an app version
+(post "/control/api/appname:/deploy/version:"
+      (require-authorization)
+      (set app (mongo findOne:(dict name:appname) inCollection:(+ SITE ".apps")))
+      (unless app (return "can't find app"))
+      (set version ((REQUEST bindings) version:))
+      (if (deploy-version app version)
+          (then "deployed")
+          (else "error: unable to deploy app")))
+
+
+;; add an app
+(post "/control/api/apps"
+(NSLog "create an app #{((REQUEST post) description)}")
+     (require-authorization)
+     (set app (dict name:((REQUEST post) name:)
+                    path:((REQUEST post) path:)
+                 domains:((REQUEST post) domains:)
+             description:((REQUEST post) description:)
+                 workers:(((REQUEST post) workers:) intValue)
+                owner_id:(account _id:)))
+   (puts (app description))
+     (set appid ((add-app app) stringValue))
+     appid)
+
+;; delete an entire app
+(delete "/control/api/apps/appid:"
+      (require-authorization)
+      (set appid ((REQUEST bindings) appid:))
+      (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
+      (unless app (return nil))
+(NSLog "removing app #(app description)")
+      (halt-app-deployment app)
+      (mongo removeWithCondition:(dict _id:(oid appid)) fromCollection:"control.apps")
+      ;; TODO stop and remove the app workers
+      ((app versions:) each:
+       (do (version)
+           (mongo removeFile:(version version:)
+                inCollection:"appfiles"
+                  inDatabase:"control")))
+      "OK")
+
+;; halt a running app
+(post "/control/api/stop/appid:"
+     (require-authorization)
+     (set appid ((REQUEST bindings) appid:))
+     (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
+     (unless app (return nil))
+     (halt-app-deployment app)
+     "OK")
+
+;; deploy an app version
+(post "/control/api/deploy/appid:/version:"
+     (require-authorization)
+     (set appid ((REQUEST bindings) appid:))
+     (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
+     (unless app (return nil))
+     (set version ((REQUEST bindings) version:))
+     (deploy-version app version)
+     "OK")
+
+;;; site management
+
+(get "/control/api/restart"
+     (require-authorization)
+     (RESPONSE setExit:1)
+     (RESPONSE redirectResponseToLocation:"/restart.html"))
 
 (AgentHTTPServer run)

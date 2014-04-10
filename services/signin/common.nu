@@ -49,7 +49,6 @@
 (macro topbar-for-app (appname additional-items)
        `(progn (set available-apps (array (dict name:"ACCOUNTS" path:"/accounts")
                                           (dict name:"CHIEF" path:"/chief")
-                                          (dict name:"CONTROL" path:"/control")
                                           (dict name:"FILES" path:"/files")
                                           (dict name:"MDM" path:"/mdm")))
                
