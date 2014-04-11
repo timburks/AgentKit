@@ -35,8 +35,13 @@
                       " -u " credentials))
       (puts command)
       (set results (NSData dataWithShellCommand:command))
-      (global APPS (results propertyListValue))
-      (puts "apps: #{(APPS description)}"))
+      (global APPS ((results propertyListValue) apps:))
+      (APPS each:
+            (do (APP)
+                (puts (APP name:))
+                (puts (APP _id:))))
+      "OK")
+
 
 (task "delete" => "list" is
       (set app (APPS find:(do (app) (eq (app name:) "chief"))))

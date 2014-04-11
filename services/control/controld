@@ -428,19 +428,6 @@ END)))))
                        (set mongo (AgentMongoDB new))
                        (mongo connect))))
 
-(macro get-user (REQUEST)
-       `(progn (set screen_name nil)
-               (set session nil)
-               (set user nil)
-               (if (set token ((,REQUEST cookies) session:))
-                   (set mongo (AgentMongoDB new))
-                   (mongo connect)
-                   (set session (mongo findOne:(dict cookie:token) inCollection:"accounts.sessions"))
-                   (if session (then (set user (mongo findOne:(dict _id:(session account_id:)) inCollection:"accounts.users")))
-                       (else (set user nil)))
-                   (set screen_name (session username:)))
-               user))
-
 (macro require-authorization ()
        `(progn (set authorization ((REQUEST headers) Authorization:))
                (set parts (authorization componentsSeparatedByString:" "))
@@ -474,13 +461,14 @@ END)))))
                                (mongo-connect)
                                (set account (mongo findOne:(dict secret:secret)
                                               inCollection:"accounts.users")))
-                     (else (set account (get-user REQUEST))))
+                     (else (set account nil)))
                (if account
-                   (then ((progn ,@*body) XMLPropertyListRepresentation))
+                   (then (set response (progn ,@*body)))
                    (else (RESPONSE setStatus:401)
-                         ((dict message:"Unauthorized") XMLPropertyListRepresentation)))))
+                         (set response (dict message:"Unauthorized"))))
+               (response XMLPropertyListRepresentation)))
 
-;; API 
+;; API
 
 ;; get account information for the authenticated user
 (get "/control/api/account"
@@ -490,15 +478,15 @@ END)))))
 
 ;; restart NGINX
 (post "/control/api/nginx/restart"
-      (require-authorization)
-      (restart-nginx)
-      "OK")
+      (auth (restart-nginx)
+            (dict message:"OK")))
 
 ;;; restart CONTROL
 (get "/control/api/restart"
-     (require-authorization)
-     (RESPONSE setExit:1)
-     (RESPONSE redirectResponseToLocation:"/restart.html"))
+     (auth (RESPONSE setExit:1)
+           (RESPONSE redirectResponseToLocation:"/restart.html")
+           (dict message:"OK")))
+
 
 ;; create an administrator if none exists
 (post "/control/api/admin"
@@ -516,38 +504,35 @@ END)))))
 
 ;; get a list of apps
 (get "/control/api/apps"
-     (require-authorization)
-     (set apps (mongo findArray:nil inCollection:"control.apps"))
-     (apps XMLPropertyListRepresentation))
+     (auth (set apps (mongo findArray:nil inCollection:"control.apps"))
+           (dict message:"OK" apps:apps)))
 
 ;; create an app
 (post "/control/api/apps"
-      (require-authorization)
-      (set app (dict name:((REQUEST post) name:)
-                     path:((REQUEST post) path:)
-                  domains:((REQUEST post) domains:)
-              description:((REQUEST post) description:)
-                  workers:(((REQUEST post) workers:) intValue)
-                 owner_id:(account _id:)))
-      (set appid ((add-app app) stringValue))
-      appid)
+      (auth (set app (dict name:((REQUEST post) name:)
+                           path:((REQUEST post) path:)
+                        domains:((REQUEST post) domains:)
+                    description:((REQUEST post) description:)
+                        workers:(((REQUEST post) workers:) intValue)
+                       owner_id:(account _id:)))
+            (set appid ((add-app app) stringValue))
+            (dict message:"OK" appid:appid)))
 
 ;; delete an app (and all versions)
 (delete "/control/api/apps/appid:"
-        (require-authorization)
-        (set appid ((REQUEST bindings) appid:))
-        (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
-        (unless app (return nil))
-        (NSLog "removing app #(app description)")
-        (halt-app-deployment app)
-        (mongo removeWithCondition:(dict _id:(oid appid)) fromCollection:"control.apps")
-        ;; TODO stop and remove the app workers
-        ((app versions:) each:
-         (do (version)
-             (mongo removeFile:(version version:)
-                  inCollection:"appfiles"
-                    inDatabase:"control")))
-        "OK")
+        (auth (set appid ((REQUEST bindings) appid:))
+              (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
+              (unless app (return nil))
+              (NSLog "removing app #(app description)")
+              (halt-app-deployment app)
+              (mongo removeWithCondition:(dict _id:(oid appid)) fromCollection:"control.apps")
+              ;; TODO stop and remove the app workers
+              ((app versions:) each:
+               (do (version)
+                   (mongo removeFile:(version version:)
+                        inCollection:"appfiles"
+                          inDatabase:"control")))
+              (dict message:"OK")))
 
 ;; add a version of an app
 (post "/control/api/appname:"

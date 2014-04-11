@@ -187,7 +187,7 @@ void add_object_to_bson(bson *b, id key, id object)
 {
     char buffer[25];                              /* str must be at least 24 hex chars + null byte */
     bson_oid_to_string(&oid, buffer);
-    return [NSString stringWithFormat:@"(oid \"%s\")", buffer];
+    return [NSString stringWithFormat:@"%s", buffer];
 }
 
 - (NSString *) stringValue
