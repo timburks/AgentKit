@@ -34,8 +34,8 @@
       (set command (+ "curl -s " agentbox "/control/api/apps"
                       " -u " credentials))
       (puts command)
-      (set results (NSString stringWithShellCommand:command))
-      (global APPS (results agent_JSONValue))
+      (set results (NSData dataWithShellCommand:command))
+      (global APPS (results propertyListValue))
       (puts "apps: #{(APPS description)}"))
 
 (task "delete" => "list" is
@@ -59,6 +59,23 @@
       (set results (NSString stringWithShellCommand:command))
       (puts "apps: #{(results description)}"))
 
+(task "restart" is
+      (set command (+ "curl -s "
+                      " -X POST"
+                      " " agentbox "/control/api/nginx/restart"
+                      " -u " credentials))
+      (puts command)
+      (set results (NSString stringWithShellCommand:command))
+      (puts "apps: #{(results description)}"))
+
+(task "account" is
+      (set command (+ "curl -s "
+                      " -X GET"
+                      " " agentbox "/control/api/account"
+                      " -u " credentials))
+      (puts command)
+      (set results (NSString stringWithShellCommand:command))
+      (puts "apps: #{(results description)}"))
 
 (task "default" => "zip")
 
