@@ -2,21 +2,7 @@
 (load "AgentHTTP")
 (load "AgentCrypto")
 (load "AgentMongoDB")
-
-(set PASSWORD_SALT "agent.io")
-
-(set common (NSString stringWithContentsOfFile:"common.nu" encoding:NSUTF8StringEncoding error:nil))
-(set mongo (AgentMongoDB new))
-(while (mongo connect)
-       (NSLog "waiting for mongodb")
-       (sleep 1))
-(set code (dict _id:"common" nu:common))
-(mongo updateObject:code
-       inCollection:"control.code"
-      withCondition:(dict _id:(code _id:))
-  insertIfNecessary:YES
-updateMultipleEntries:NO)
-(eval (parse common))
+(load "AgentKit")
 
 (macro signin-form (username password message)
        `(progn (htmlpage "Sign In"
@@ -46,10 +32,11 @@ updateMultipleEntries:NO)
                                                                 "&nbsp;Sign in&nbsp;"))))))))
 
 (get "/signin"
-     (authenticate)
-     (if screen_name
-         (then (redirect "/accounts"))
-         (else (signin-form "" "" "Hello!"))))
+(htmlpage "Fuck" "Fuck" "Fuck"))
+;     (authenticate)
+;     (if screen_name
+;         (then (redirect "/accounts"))
+;         (else (signin-form "" "" "Hello!"))))
 
 (post "/signin"
       (set mongo (AgentMongoDB new))

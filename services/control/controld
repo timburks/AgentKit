@@ -211,6 +211,7 @@ END)))))
      "/usr/sbin/nginx")
 
 (def restart-nginx ()
+     (mongo-connect)
      ((NSFileManager defaultManager) removeItemAtPath:(nginx-conf-path) error:nil)
      (set apps (mongo findArray:nil inCollection:"control.apps"))
      ((nginx-config-with-services apps) writeToFile:(nginx-conf-path) atomically:YES)
@@ -224,10 +225,12 @@ END)))))
       writeToFile:"#{CONTROL_PATH}/public/restart.html" atomically:NO))
 
 (def add-app (app)
+     (mongo-connect)
      (mongo insertObject:app intoCollection:"control.apps"))
 
 (def add-version (app appfile-name appfile-data)
      (set version ((AgentUUID new) stringValue))
+     (mongo-connect)
      (mongo writeData:appfile-data
                 named:version
          withMIMEType:"application/zip"
@@ -253,6 +256,7 @@ END)))))
      version)
 
 (def get-busy-ports ()
+     (mongo-connect)
      (set apps (mongo findArray:nil inCollection:"control.apps"))
      (set ports (NSMutableSet set))
      (apps each:
@@ -268,6 +272,7 @@ END)))))
      port)
 
 (def deploy-version (app version-name)
+     (mongo-connect)
      (set versions (app versions:))
      (set versions (versions select:
                              (do (version) (eq (version version:) version-name))))
@@ -335,6 +340,7 @@ END)))))
               nil)))
 
 (def redeploy ()
+     (mongo-connect)
      (set apps (mongo findArray:nil inCollection:"control.apps"))
      (apps each:
            (do (app)
@@ -399,6 +405,7 @@ END)))))
      (restart-nginx))
 
 (def halt-app-deployment (app)
+     (mongo-connect)
      ;; get deployment
      (set deployment (app deployment:))
      ;; stop workers
@@ -538,7 +545,7 @@ END)))))
 (post "/control/apps/appid:"
       (auth (mongo-connect)
             (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
-            (unless app (return "error: app #{appname} not found"))
+            (unless app (return (dict message:"error: app #{appname} not found")))
             (if (and (set appfile-data (REQUEST body))
                      (appfile-data length)
                      (set appfile-name (+ (app name:) ".zip")))
