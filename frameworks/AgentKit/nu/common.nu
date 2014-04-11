@@ -82,3 +82,40 @@
                                                (do (app)
                                                    (+ (&li class:"divider")
                                                       (&li (&a href:(app path:) (app name:)))))))))))))
+
+(macro mongo-connect ()
+       `(progn (unless (defined mongo)
+                       (set mongo (AgentMongoDB new))
+                       (mongo connect))))
+
+(function html-escape (s)
+          ((((s stringByReplacingOccurrencesOfString:"&" withString:"&amp;")
+             stringByReplacingOccurrencesOfString:"<" withString:"&lt;")
+            stringByReplacingOccurrencesOfString:">" withString:"&gt;")
+           stringByReplacingOccurrencesOfString:"\"" withString:"&quot;"))
+
+((set date-formatter
+      ((NSDateFormatter alloc) init))
+ setDateFormat:"EEEE MMMM d, yyyy")
+
+((set rss-date-formatter
+      ((NSDateFormatter alloc) init))
+ setDateFormat:"EEE, d MMM yyyy hh:mm:ss ZZZ")
+
+(function oid (string)
+          ((AgentBSONObjectID alloc) initWithString:string))
+
+(class NSArray
+ (- subarraysOfN:n is
+    (set a (array))
+    (set current (array))
+    (self each:
+          (do (item)
+              (if (eq (current count) 0)
+                  (a << current))
+              (current << item)
+              (if (eq (current count) n)
+                  (set current (array)))))
+    a))
+
+
