@@ -229,7 +229,9 @@
      (require-user)
      (set appid ((REQUEST bindings) appid:))
      (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
-     (unless app (return nil))
+     (unless app
+             (NSLog "app not found, so we can't stop it")
+             (return nil))
      
      (set path "http://localhost:2010/control/api/stop/#{appid}")
      (set URL (NSURL URLWithString:path))
@@ -480,7 +482,7 @@
      (request setHTTPMethod:"POST")
      (set auth (("admin:master123" dataUsingEncoding:NSUTF8StringEncoding) agent_base64EncodedString))
      (request setValue:"BASIC #{auth}" forHTTPHeaderField:"Authorization")
-     (set result (NSURLConnection sendSynchronousRequest:request returningResponse:(set responsep (NuReference new)) error:(set errorp (NuReference new))))     
+     (set result (NSURLConnection sendSynchronousRequest:request returningResponse:(set responsep (NuReference new)) error:(set errorp (NuReference new))))
      (RESPONSE redirectResponseToLocation:"/chief"))
 
 ;;; site management

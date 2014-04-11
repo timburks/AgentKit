@@ -2,7 +2,7 @@
 
 (set appname "chief")
 
-(set agentbox "http://alpha.agent.io")
+(set agent "https://alpha.agent.io")
 (set credentials "admin:master123")
 
 (task "zip" is
@@ -10,55 +10,83 @@
       (SH "cp #{appname} build/#{appname}.app")
       (SH "cd build; zip -r #{appname}.zip #{appname}.app"))
 
-(task "pub" => "zip" is
-      ;; upload a new app version
-      (set command (+ "curl -s " agentbox "/control/api/"
-                      appname
-                      " -T build/#{appname}.zip"
-                      " -X POST"
-                      " -u " credentials))
-      (puts command)
-      (set version (NSString stringWithShellCommand:command))
-      (puts "app version: #{version}")
-      (set command (+ "curl -s " agentbox "/control/api/"
-                      appname
-                      "/deploy/"
-                      version
-                      " -X POST"
-                      " -u " credentials))
-      (set result (NSString stringWithShellCommand:command))
-      (puts "deployment result: #{result}"))
-
+(task "pub" => "zip" "list" is
+      (set app (APPS find:(do (app) (eq (app name:) appname))))
+      (if app
+          (then
+               ;; upload a new app version
+               (set command (+ "curl -s "
+                               agent "/control/apps/" (app _id:)
+                               " -T build/#{appname}.zip"
+                               " -X POST"
+                               " -u " credentials))
+               (puts command)
+               (set results (NSData dataWithShellCommand:command))
+               (set version ((results propertyListValue) version:))
+               
+               (puts "app version: #{version}")
+               (set command (+ "curl -s "
+                               agent "/control/apps/" (app _id:) "/" version "/deploy"
+                               " -X POST"
+                               " -u " credentials))
+               (set result (NSString stringWithShellCommand:command))
+               (puts "deployment result: #{result}"))
+          (else (puts "app not found"))))
 
 (task "list" is
-      (set command (+ "curl -s " agentbox "/control/api/apps"
+      (set command (+ "curl -s "
+                      agent "/control/apps"
                       " -u " credentials))
       (puts command)
       (set results (NSData dataWithShellCommand:command))
       (global APPS ((results propertyListValue) apps:))
       (APPS each:
             (do (APP)
-                (puts (APP name:))
-                (puts (APP _id:))))
+                (puts (+ (APP _id:) " " (APP name:)))))
+      (puts (APPS description))
       "OK")
 
+(task "show" => "list" is
+      (set app (APPS find:(do (app) (eq (app name:) appname))))
+      (if app
+          (then (set command (+ "curl -s "
+                                agent "/control/apps/" (app _id:)
+                                " -X GET"
+                                " -u " credentials))
+                (puts command)
+                (set results (NSString stringWithShellCommand:command))
+                (puts "apps: #{(results description)}"))
+          (else (puts "App not found"))))
+
+(task "stop" => "list" is
+      (set app (APPS find:(do (app) (eq (app name:) appname))))
+      (if app
+          (then (set command (+ "curl -s "
+                                agent "/control/apps/" (app _id:) "/stop"
+                                " -X POST"
+                                " -u " credentials))
+                (puts command)
+                (set results (NSString stringWithShellCommand:command))
+                (puts "apps: #{(results description)}"))
+          (else (puts "App not found"))))
 
 (task "delete" => "list" is
-      (set app (APPS find:(do (app) (eq (app name:) "chief"))))
+      (set app (APPS find:(do (app) (eq (app name:) appname))))
       (if app
-          (then (set command (+ "curl -s " agentbox "/control/api/apps/" (app _id:)
+          (then (set command (+ "curl -s "
+                                agent "/control/apps/" (app _id:)
                                 " -X DELETE"
                                 " -u " credentials))
                 (puts command)
                 (set results (NSString stringWithShellCommand:command))
                 (puts "apps: #{(results description)}"))
-          (else "App not found")))
+          (else (puts "App not found"))))
 
 (task "create" is
       (set command (+ "curl -s "
-                      " -d \"name=chief&path=chief&workers=1&domains=&description=\""
+                      " -d \"name=#{appname}&path=#{appname}&workers=1&domains=&description=\""
                       " -X POST"
-                      " " agentbox "/control/api/apps"
+                      " " agent "/control/apps"
                       " -u " credentials))
       (puts command)
       (set results (NSString stringWithShellCommand:command))
@@ -67,16 +95,25 @@
 (task "restart" is
       (set command (+ "curl -s "
                       " -X POST"
-                      " " agentbox "/control/api/nginx/restart"
+                      " " agent "/control/nginx/restart"
                       " -u " credentials))
       (puts command)
       (set results (NSString stringWithShellCommand:command))
       (puts "apps: #{(results description)}"))
 
-(task "account" is
+(task "nginx" is
       (set command (+ "curl -s "
                       " -X GET"
-                      " " agentbox "/control/api/account"
+                      " " agent "/control/nginx"
+                      " -u " credentials))
+      (puts command)
+      (set results (NSString stringWithShellCommand:command))
+      (puts "apps: #{(results description)}"))
+
+(task "user" is
+      (set command (+ "curl -s "
+                      " -X GET"
+                      " " agent "/control/user"
                       " -u " credentials))
       (puts command)
       (set results (NSString stringWithShellCommand:command))

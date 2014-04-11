@@ -38,10 +38,16 @@
 ;(set HOSTINFO (dict))
 ;(set HOSTINFO (dict host:"127.0.0.1" port:20101))
 
-(set mongo (AgentMongoDB new))
-(while (mongo connect)
-       (NSLog "deus: waiting for database")
-       (sleep 1))
+;(set mongo (AgentMongoDB new))
+;(while (mongo connect)
+;       (NSLog "deus: waiting for database")
+;       (sleep 1))
+
+(macro mongo-connect ()
+       `(progn (unless (defined mongo)
+                       (set mongo (AgentMongoDB new))
+                       (mongo connect))))
+
 
 ;(mongo connectWithOptions:HOSTINFO)
 ;(mongo authenticateUser:"agentbox" withPassword:"xme" forDatabase:SITE)
@@ -122,8 +128,8 @@ http {
     server {
         listen          80;
         listen          443 ssl;
-        ssl_certificate     #{CONTROL_PATH}/control/etc/wildcard_agent_io.crt;
-        ssl_certificate_key #{CONTROL_PATH}/control/etc/wildcard_agent_io.key;
+        ssl_certificate     #{CONTROL_PATH}/etc/wildcard_agent_io.crt;
+        ssl_certificate_key #{CONTROL_PATH}/etc/wildcard_agent_io.key;
         server_name     ~^(.*)$;
         root #{CONTROL_PATH}/public;
         try_files $uri.html $uri $uri/ =404;
@@ -423,25 +429,6 @@ END)))))
       ((NSDateFormatter alloc) init))
  setDateFormat:"EEE, d MMM yyyy hh:mm:ss ZZZ")
 
-(macro mongo-connect ()
-       `(progn (unless (defined mongo)
-                       (set mongo (AgentMongoDB new))
-                       (mongo connect))))
-
-(macro require-authorization ()
-       `(progn (set authorization ((REQUEST headers) Authorization:))
-               (set parts (authorization componentsSeparatedByString:" "))
-               (set credentials (NSString stringWithData:(NSData agent_dataWithBase64EncodedString:(parts 1))
-                                                encoding:NSUTF8StringEncoding))
-               (set parts (credentials componentsSeparatedByString:":"))
-               (set username (parts 0))
-               (set password (parts 1))
-               (set user (mongo findOne:(dict username:username
-                                              password:(password agent_md5HashWithSalt:PASSWORD_SALT))
-                           inCollection:"accounts.users"))
-               (set account user)
-               (unless account (return "unauthorized"))))
-
 ;; this macro wraps api handlers and generates formatted responses from the results.
 (macro auth (*body) ;; the body should return a (dict)
        `(progn (RESPONSE setValue:"application/xml" forHTTPHeader:"Content-Type")
@@ -468,47 +455,62 @@ END)))))
                          (set response (dict message:"Unauthorized"))))
                (response XMLPropertyListRepresentation)))
 
-;; API
+;; The CONTROL API
 
 ;; get account information for the authenticated user
-(get "/control/api/account"
+(get "/control/user"
      (auth (account removeObjectForKey:"password")
            (account removeObjectForKey:"_id")
            (dict message:"OK" account:account)))
 
-;; restart NGINX
-(post "/control/api/nginx/restart"
-      (auth (restart-nginx)
-            (dict message:"OK")))
+;; create a user if none exists
+(post "/control/admin"
+      (auth (mongo-connect)
+            (set admin ((REQUEST body) propertyListValue))
+            (if (mongo countWithCondition:(dict) inCollection:"users" inDatabase:"accounts")
+                (then (dict message:"Admin already exists"))
+                (else (mongo insertObject:(dict username:(admin username:)
+                                                password:((admin password:) agent_md5HashWithSalt:PASSWORD_SALT)
+                                                  secret:((AgentUUID new) stringValue)
+                                                verified:YES
+                                                   admin:YES)
+                           intoCollection:"accounts.users")
+                      (dict message:"ok")))))
 
-;;; restart CONTROL
-(get "/control/api/restart"
+;; restart control
+(get "/control/restart"
      (auth (RESPONSE setExit:1)
            (RESPONSE redirectResponseToLocation:"/restart.html")
            (dict message:"OK")))
 
+;; get nginx configuration and status
+(get "/control/nginx"
+     (auth (dict message:"ok"
+                    conf:(NSString stringWithContentsOfFile:(nginx-conf-path) encoding:NSUTF8StringEncoding error:nil))))
 
-;; create an administrator if none exists
-(post "/control/api/admin"
-      (noauth (set admin ((REQUEST body) propertyListValue))
-              (mongo-connect)
-              (if (mongo countWithCondition:(dict) inCollection:"users" inDatabase:"accounts")
-                  (then (dict message:"Admin already exists"))
-                  (else (mongo insertObject:(dict username:(admin username:)
-                                                  password:((admin password:) agent_md5HashWithSalt:PASSWORD_SALT)
-                                                    secret:((AgentUUID new) stringValue)
-                                                  verified:YES
-                                                     admin:YES)
-                             intoCollection:"accounts.users")
-                        (dict message:"ok")))))
+;; restart nginx
+(post "/control/nginx/restart"
+      (auth (restart-nginx)
+            (dict message:"OK")))
 
 ;; get a list of apps
-(get "/control/api/apps"
-     (auth (set apps (mongo findArray:nil inCollection:"control.apps"))
+(get "/control/apps"
+     (auth (mongo-connect)
+           (set apps (mongo findArray:nil
+                         inCollection:"control.apps"
+                      returningFields:(dict _id:1 name:1)
+                       numberToReturn:1000
+                         numberToSkip:0))
            (dict message:"OK" apps:apps)))
 
+;; get details for an individual app
+(get "/control/apps/appid:"
+     (auth (mongo-connect)
+           (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
+           (dict message:"OK" app:app)))
+
 ;; create an app
-(post "/control/api/apps"
+(post "/control/apps"
       (auth (set app (dict name:((REQUEST post) name:)
                            path:((REQUEST post) path:)
                         domains:((REQUEST post) domains:)
@@ -518,15 +520,13 @@ END)))))
             (set appid ((add-app app) stringValue))
             (dict message:"OK" appid:appid)))
 
-;; delete an app (and all versions)
-(delete "/control/api/apps/appid:"
-        (auth (set appid ((REQUEST bindings) appid:))
+;; delete an app and all versions
+(delete "/control/apps/appid:"
+        (auth (mongo-connect)
               (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
-              (unless app (return nil))
-              (NSLog "removing app #(app description)")
+              (unless app (return (dict message:"unknown app")))
               (halt-app-deployment app)
               (mongo removeWithCondition:(dict _id:(oid appid)) fromCollection:"control.apps")
-              ;; TODO stop and remove the app workers
               ((app versions:) each:
                (do (version)
                    (mongo removeFile:(version version:)
@@ -535,66 +535,52 @@ END)))))
               (dict message:"OK")))
 
 ;; add a version of an app
-(post "/control/api/appname:"
-      (require-authorization)
-      (set app (mongo findOne:(dict name:appname) inCollection:"control.apps"))
-      (unless app (return "error: app #{appname} not found"))
-      (if (and (set appfile-data (REQUEST body))
-               (appfile-data length)
-               (set appfile-name (+ (app name:) ".zip")))
-          (then ;; save appfile
-                (set version (add-version app appfile-name appfile-data))
-                (version version:))
-          (else "error: invalid app data")))
+(post "/control/apps/appid:"
+      (auth (mongo-connect)
+            (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
+            (unless app (return "error: app #{appname} not found"))
+            (if (and (set appfile-data (REQUEST body))
+                     (appfile-data length)
+                     (set appfile-name (+ (app name:) ".zip")))
+                (then ;; save appfile
+                      (set version (add-version app appfile-name appfile-data))
+                      (dict message:"OK" version:(version version:)))
+                (else (dict message:"error: invalid app data")))))
 
 ;; delete a version of an app
-(delete "/control/api/apps/appid:/version:"
-        (require-authorization)
-        (set appid ((REQUEST bindings) appid:))
-        (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
-        (unless app (return nil))
-        (set version ((REQUEST bindings) version:))
-        (set versions (app versions:))
-        (set versions (versions select:
-                                (do (v) (ne (v version:) version))))
-        (set update (dict $set:(dict versions:versions)))
-        (mongo updateObject:update
-               inCollection:"control.apps"
-              withCondition:(dict _id:(oid appid))
-          insertIfNecessary:NO
-      updateMultipleEntries:NO)
-        (mongo removeFile:version
-             inCollection:"appfiles"
-               inDatabase:"control")
-        "OK")
+(delete "/control/apps/appid:/version:"
+        (auth (mongo-connect)
+              (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
+              (unless app (return nil))
+              (set versions (app versions:))
+              (set versions (versions select:
+                                      (do (v) (ne (v version:) version))))
+              (set update (dict $set:(dict versions:versions)))
+              (mongo updateObject:update
+                     inCollection:"control.apps"
+                    withCondition:(dict _id:(oid appid))
+                insertIfNecessary:NO
+            updateMultipleEntries:NO)
+              (mongo removeFile:version
+                   inCollection:"appfiles"
+                     inDatabase:"control")
+              (dict message:"OK")))
 
 ;; deploy an app version
-(post "/control/api/appname:/deploy/version:"
-      (require-authorization)
-      (set app (mongo findOne:(dict name:appname) inCollection:"control.apps"))
-      (unless app (return "can't find app"))
-      (set version ((REQUEST bindings) version:))
-      (if (deploy-version app version)
-          (then "deployed")
-          (else "error: unable to deploy app")))
-
-;; deploy an app version
-(post "/control/api/deploy/appid:/version:"
-      (require-authorization)
-      (set appid ((REQUEST bindings) appid:))
-      (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
-      (unless app (return nil))
-      (set version ((REQUEST bindings) version:))
-      (deploy-version app version)
-      "OK")
+(post "/control/apps/appid:/version:/deploy"
+      (auth (mongo-connect)
+            (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
+            (unless app (return (dict message:"can't find app")))
+            (if (deploy-version app version)
+                (then (dict message:"OK"))
+                (else (dict message:"error: unable to deploy app")))))
 
 ;; halt a running app
-(post "/control/api/stop/appid:"
-      (require-authorization)
-      (set appid ((REQUEST bindings) appid:))
-      (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
-      (unless app (return nil))
-      (halt-app-deployment app)
-      "OK")
+(post "/control/apps/appid:/stop"
+      (auth (mongo-connect)
+            (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
+            (unless app (return nil))
+            (halt-app-deployment app)
+            (dict message:"OK")))
 
 (AgentHTTPServer run)

@@ -5,7 +5,6 @@
 
 (set PASSWORD_SALT "agent.io")
 
-
 (set common (NSString stringWithContentsOfFile:"common.nu" encoding:NSUTF8StringEncoding error:nil))
 (set mongo (AgentMongoDB new))
 (while (mongo connect)
