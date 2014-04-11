@@ -34,6 +34,8 @@
                (puts "deployment result: #{result}"))
           (else (puts "app not found"))))
 
+(task "pub" => "deploy")
+
 (task "list" is
       (set command (+ "curl -s "
                       AGENT "/control/apps"

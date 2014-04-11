@@ -4,6 +4,11 @@
 (load "AgentMongoDB")
 (load "AgentKit")
 
+(macro mongo-connect ()
+       `(progn (unless (defined mongo)
+                       (set mongo (AgentMongoDB new))
+                       (mongo connect))))
+
 (function html-escape (s)
           ((((s stringByReplacingOccurrencesOfString:"&" withString:"&amp;")
              stringByReplacingOccurrencesOfString:"<" withString:"&lt;")
@@ -117,9 +122,11 @@
                                       (&a href:"/chief" "Cancel")))))))
 
 (def add-app (app)
+     (mongo-connect)
      (mongo insertObject:app intoCollection:"control.apps"))
 
 (def add-version (app appfile-name appfile-data)
+     (mongo-connect)
      (set version ((AgentUUID new) stringValue))
      (mongo writeData:appfile-data
                 named:version
@@ -149,13 +156,13 @@
 
 (post "/chief/apps/add"
       (require-user)
-      (set path "http://localhost:2010/control/api/apps")
+      (set path "http://localhost:2010/control/apps")
       (set URL (NSURL URLWithString:path))
       (set request (NSMutableURLRequest requestWithURL:URL))
       (request setHTTPMethod:"POST")
       (request setHTTPBody:(REQUEST body))
       (set auth (("admin:master123" dataUsingEncoding:NSUTF8StringEncoding) agent_base64EncodedString))
-      (request setValue:"BASIC #{auth}" forHTTPHeaderField:"Authorization")
+      (request setValue:"Basic #{auth}" forHTTPHeaderField:"Authorization")
       (set result (NSURLConnection sendSynchronousRequest:request returningResponse:(set responsep (NuReference new)) error:(set errorp (NuReference new))))
       (set appid ((NSString alloc) initWithData:result encoding:NSUTF8StringEncoding))
       (RESPONSE redirectResponseToLocation:(+ "/chief/apps/manage/" appid)))
@@ -163,6 +170,7 @@
 (get "/chief/apps/manage/appid:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
+     (mongo-connect)
      (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
      (htmlpage (+ "Manage " (app name:))
                (&div (topbar)
@@ -222,24 +230,26 @@
 (get "/chief/apps/manage/stop/appid:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
+     (mongo-connect)
      (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
      (unless app
              (NSLog "app not found, so we can't stop it")
              (return nil))
      
-     (set path "http://localhost:2010/control/api/stop/#{appid}")
+     (set path "http://localhost:2010/control/apps/#{appid}/stop")
      (set URL (NSURL URLWithString:path))
      (set request (NSMutableURLRequest requestWithURL:URL))
      (request setHTTPMethod:"POST")
      (request setHTTPBody:(REQUEST body))
      (set auth (("admin:master123" dataUsingEncoding:NSUTF8StringEncoding) agent_base64EncodedString))
-     (request setValue:"BASIC #{auth}" forHTTPHeaderField:"Authorization")
+     (request setValue:"Basic #{auth}" forHTTPHeaderField:"Authorization")
      (set result (NSURLConnection sendSynchronousRequest:request returningResponse:(set responsep (NuReference new)) error:(set errorp (NuReference new))))
      (RESPONSE redirectResponseToLocation:(+ "/chief/apps/manage/" appid)))
 
 (get "/chief/apps/manage/delete/appid:/version:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
+     (mongo-connect)
      (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
      (unless app (return nil))
      (set version ((REQUEST bindings) version:))
@@ -260,28 +270,31 @@
 (get "/chief/apps/manage/deploy/appid:/version:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
+     (mongo-connect)
      (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
      (unless app (return nil))
      (set version ((REQUEST bindings) version:))
      
-     (set path "http://localhost:2010/control/api/deploy/#{appid}/#{version}")
+     (set path "http://localhost:2010/control/apps/#{appid}/#{version}/deploy")
      (set URL (NSURL URLWithString:path))
      (set request (NSMutableURLRequest requestWithURL:URL))
      (request setHTTPMethod:"POST")
      (request setHTTPBody:(REQUEST body))
      (set auth (("admin:master123" dataUsingEncoding:NSUTF8StringEncoding) agent_base64EncodedString))
-     (request setValue:"BASIC #{auth}" forHTTPHeaderField:"Authorization")
+     (request setValue:"Basic #{auth}" forHTTPHeaderField:"Authorization")
      (set result (NSURLConnection sendSynchronousRequest:request returningResponse:(set responsep (NuReference new)) error:(set errorp (NuReference new))))
      
      (RESPONSE redirectResponseToLocation:(+ "/chief/apps/manage/" appid)))
 
 (post "/chief/apps/upload/appid:"
+      (puts "UPLOAD")
       (require-user)
       (set appid ((REQUEST bindings) appid:))
+      (mongo-connect)
       (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
       (unless app (return nil))
       (puts "uploading")
-      (set d ((REQUEST body) multipartDictionary))
+      (set d ((REQUEST body) agent_multipartDictionary))
       (puts (d description))
       (if (and (set appfile (d appfile:))
                (set appfile-data (appfile data:))
@@ -296,6 +309,7 @@
 
 (get "/chief/apps/edit/appid:"
      (require-user)
+     (mongo-connect)
      (set appid ((REQUEST bindings) appid:))
      (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
      (unless app (return nil))
@@ -326,6 +340,7 @@
 (post "/chief/apps/edit/appid:"
       (require-user)
       (set appid ((REQUEST bindings) appid:))
+      (mongo-connect)
       (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
       (unless app (return nil))
       (set post (REQUEST post))
@@ -344,6 +359,7 @@
 (get "/chief/apps/delete/appid:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
+     (mongo-connect)
      (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
      (unless app (return nil))
      (htmlpage "delete this app?"
@@ -364,6 +380,7 @@
 (post "/chief/apps/delete/appid:"
       (require-user)
       (set appid ((REQUEST bindings) appid:))
+      (mongo-connect)
       (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
       (unless app (return nil))
       (set post (REQUEST post))
@@ -386,6 +403,7 @@
 (get "/chief/apps/manage/appid:/container:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
+     (mongo-connect)
      (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
      (unless app (return nil))
      (set container ((REQUEST bindings) container:))
@@ -405,6 +423,7 @@
 (get "/chief/apps/manage/appid:/container:/file:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
+     (mongo-connect)
      (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"control.apps"))
      (unless app (return nil))
      (set container ((REQUEST bindings) container:))
@@ -432,6 +451,7 @@
 
 (get "/chief/mongodb"
      (require-user)
+     (mongo-connect)
      (set collections ((mongo collectionNamesInDatabase:"control") sort))
      (htmlpage "Browse Data Store"
                (&div (topbar)
@@ -446,6 +466,7 @@
 
 (get "/chief/browse/collection:"
      (require-user)
+     (mongo-connect)
      (set collection ((REQUEST bindings) collection:))
      (set documents (mongo findArray:nil inCollection:(+ "control." collection)))
      (htmlpage (+ "browsing " collection)
@@ -470,12 +491,12 @@
 
 (get "/chief/restart-nginx"
      (require-user)
-     (set path "http://localhost:2010/control/api/nginx/restart")
+     (set path "http://localhost:2010/control/nginx/restart")
      (set URL (NSURL URLWithString:path))
      (set request (NSMutableURLRequest requestWithURL:URL))
      (request setHTTPMethod:"POST")
      (set auth (("admin:master123" dataUsingEncoding:NSUTF8StringEncoding) agent_base64EncodedString))
-     (request setValue:"BASIC #{auth}" forHTTPHeaderField:"Authorization")
+     (request setValue:"Basic #{auth}" forHTTPHeaderField:"Authorization")
      (set result (NSURLConnection sendSynchronousRequest:request returningResponse:(set responsep (NuReference new)) error:(set errorp (NuReference new))))
      (RESPONSE redirectResponseToLocation:"/chief"))
 
