@@ -3,21 +3,17 @@
 (load "AgentCrypto")
 (load "AgentMongoDB")
 (load "AgentJSON")
+(load "AgentKit")
 
-(set mongo (AgentMongoDB new))
-(while (mongo connect)
-       (NSLog "waiting for mongodb")
-       (sleep 1))
-(set common (mongo findOne:(dict _id:"common") inCollection:"control.code"))
-(if common (eval (parse (common nu:))))
-
-(load "keys")
-(let ((mongo (AgentMongoDB new)))
-     (mongo connect)
-     (mongo removeWithCondition:nil fromCollection:"accounts.services")
-     (SERVICES each:
-               (do (service)
-                   (mongo insertObject:service intoCollection:"accounts.services"))))
+(put "/accounts/reload"
+     (load "keys")
+     (let ((mongo (AgentMongoDB new)))
+          (mongo connect)
+          (mongo removeWithCondition:nil fromCollection:"accounts.services")
+          (SERVICES each:
+                    (do (service)
+                        (mongo insertObject:service intoCollection:"accounts.services"))))
+     "ok")
 
 (def oid (string) ;; MongoDB helper
      ((AgentBSONObjectID alloc) initWithString:string))
@@ -289,10 +285,10 @@
 (get "/accounts/twitter/connect"
      (authenticate)
      (unless screen_name (return nil))
-     
-     (set serviceinfo (SERVICES find:(do (s) (eq (s vendor:) "twitter"))))
      (set mongo (AgentMongoDB new))
      (mongo connect)
+     (set SERVICES (mongo findArray:nil inCollection:"accounts.services"))
+     (set serviceinfo (SERVICES find:(do (s) (eq (s vendor:) "twitter"))))
      (set returnAddress (((REQUEST query) agent_urlQueryDictionary) r:))
      (set result
           (oauth-request "POST"
@@ -320,10 +316,11 @@
 (get "/accounts/twitter/callback"
      (authenticate)
      (unless screen_name (return nil))
-     (set service "twitter")
-     (set serviceinfo (SERVICES find:(do (s) (eq (s vendor:) service))))
      (set mongo (AgentMongoDB new))
      (mongo connect)
+     (set SERVICES (mongo findArray:nil inCollection:"accounts.services"))
+     (set service "twitter")
+     (set serviceinfo (SERVICES find:(do (s) (eq (s vendor:) service))))
      (set TOKEN (((REQUEST query) agent_urlQueryDictionary) oauth_token:))
      (unless TOKEN
              (NSLog "no token sent to twitter-callback, assuming access denied")
@@ -407,7 +404,9 @@
 (get "/accounts/service:/connect"
      (authenticate)
      (unless screen_name (return nil))
-     
+     (set mongo (AgentMongoDB new))
+     (mongo connect)
+     (set SERVICES (mongo findArray:nil inCollection:"accounts.services"))
      (set serviceinfo (SERVICES find:(do (s) (eq (s vendor:) service))))
      (set token (nonce))
      (set query (dict client_id:(serviceinfo client_id:)
@@ -421,7 +420,9 @@
 (get "/accounts/service:/oauth2callback"
      (authenticate)
      (unless screen_name (return nil))
-     
+     (set mongo (AgentMongoDB new))
+     (mongo connect)
+     (set SERVICES (mongo findArray:nil inCollection:"accounts.services"))
      (set serviceinfo (SERVICES find:(do (s) (eq (s vendor:) service))))
      (NSLog "#{service} CALLBACK")
      (set query ((REQUEST query) agent_urlQueryDictionary))
@@ -640,6 +641,9 @@
 
 
 (get "/accounts/twitter"
+     (set mongo (AgentMongoDB new))
+     (mongo connect)
+     (set SERVICES (mongo findArray:nil inCollection:"accounts.services"))
      (set serviceinfo (SERVICES find:(do (s) (eq (s vendor:) "twitter"))))
      (authenticate)
      (set session (SESSIONS find:(do (session) (eq (session provider:) "twitter"))))

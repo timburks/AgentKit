@@ -1,53 +1,10 @@
-(set appname "signin")
+(load "AgentKit:tasks")
 
-(set agent "https://alpha.agent.io")
-(set credentials "admin:master123")
+(set APP (dict name:"signin"
+               path:"signin"
+            workers:1
+            domains:""
+        description:"Agent signin service."))
 
-(task "zip" is
-      (SH "mkdir -p build/#{appname}.app")
-      (SH "cp #{appname} build/#{appname}.app")
-      (SH "cp common.nu build/#{appname}.app")
-      (SH "cd build; zip -r #{appname}.zip #{appname}.app"))
-
-(task "pub" => "list" "zip"  is
-      (set app (APPS find:(do (app) (eq (app name:) appname))))
-      (if app
-          (then
-               ;; upload a new app version
-               (set command (+ "curl -s "
-                               agent "/control/apps/" (app _id:)
-                               " -T build/#{appname}.zip"
-                               " -X POST"
-                               " -u " credentials))
-               (puts command)
-               (set results (NSData dataWithShellCommand:command))
-               (puts ((NSString alloc) initWithData:results encoding:NSUTF8StringEncoding))
-               
-               (set version ((results propertyListValue) version:))
-               
-               (puts "app version: #{version}")
-               (set command (+ "curl -s "
-                               agent "/control/apps/" (app _id:) "/" version "/deploy"
-                               " -X POST"
-                               " -u " credentials))
-               (puts command)
-               (set result (NSString stringWithShellCommand:command))
-               (puts "deployment result: #{result}"))
-          (else (puts "app not found"))))
-
-(task "list" is
-      (set command (+ "curl -s "
-                      agent "/control/apps"
-                      " -u " credentials))
-      (puts command)
-      (set results (NSData dataWithShellCommand:command))
-      (global APPS ((results propertyListValue) apps:))
-      (APPS each:
-            (do (APP)
-                (puts (+ (APP _id:) " " (APP name:)))))
-      (puts (APPS description))
-      "OK")
-
-
-(task "default" => "zip")
-
+(set AGENT "https://alpha.agent.io")
+(set CREDENTIALS "admin:master123")

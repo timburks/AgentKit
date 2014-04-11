@@ -32,11 +32,10 @@
                                                                 "&nbsp;Sign in&nbsp;"))))))))
 
 (get "/signin"
-(htmlpage "Fuck" "Fuck" "Fuck"))
-;     (authenticate)
-;     (if screen_name
-;         (then (redirect "/accounts"))
-;         (else (signin-form "" "" "Hello!"))))
+     (authenticate)
+     (if screen_name
+         (then (redirect "/accounts"))
+         (else (signin-form "" "" "Hello!"))))
 
 (post "/signin"
       (set mongo (AgentMongoDB new))

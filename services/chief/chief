@@ -2,19 +2,13 @@
 (load "AgentHTTP")
 (load "AgentCrypto")
 (load "AgentMongoDB")
+(load "AgentKit")
 
 (function html-escape (s)
           ((((s stringByReplacingOccurrencesOfString:"&" withString:"&amp;")
              stringByReplacingOccurrencesOfString:"<" withString:"&lt;")
             stringByReplacingOccurrencesOfString:">" withString:"&gt;")
            stringByReplacingOccurrencesOfString:"\"" withString:"&quot;"))
-
-(set mongo (AgentMongoDB new))
-(while (mongo connect)
-       (NSLog "waiting for mongodb")
-       (sleep 1))
-(set common (mongo findOne:(dict _id:"common") inCollection:"control.code"))
-(if common (eval (parse (common nu:))))
 
 ((set date-formatter
       ((NSDateFormatter alloc) init))
