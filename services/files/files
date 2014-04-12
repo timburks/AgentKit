@@ -9,15 +9,9 @@
 (load "AgentJSON")
 (load "AgentCrypto")
 (load "AgentMongoDB")
+(load "AgentKit")
 
 (load "rackspace")
-
-(set mongo (AgentMongoDB new))
-(while (mongo connect)
-       (NSLog "waiting for mongodb")
-       (sleep 1))
-(set common (mongo findOne:(dict _id:"common") inCollection:"control.code"))
-(if common (eval (parse (common nu:))))
 
 (set TOP "TOP")
 
