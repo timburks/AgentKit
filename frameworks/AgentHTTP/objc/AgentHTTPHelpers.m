@@ -390,7 +390,7 @@ static const char *const hexEncodingTable = "0123456789abcdef";
     NSMutableString *result = [[NSMutableString alloc] init];
     [result appendString:[dateFormatter stringFromDate:self]];
     [result appendString:@"T"];
-    [result appendString:[dateFormatter stringFromDate:self]];
+    [result appendString:[timeFormatter stringFromDate:self]];
     [result appendString:@"Z"];
     return result;
 }
