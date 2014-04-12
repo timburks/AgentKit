@@ -379,13 +379,13 @@ static const char *const hexEncodingTable = "0123456789abcdef";
     // do this in two parts to work around some GNUstep problems
     NSDateFormatter *dateFormatter = [[NSDateFormatter alloc] init];
     [dateFormatter setLocale:[[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"]];
-    [dateFormatter setDateFormat:@"yyyy-MM-dd"];
     [dateFormatter setTimeZone:[NSTimeZone timeZoneForSecondsFromGMT:0]];
+    [dateFormatter setDateFormat:@"yyyy-MM-ddTHH:mm:ssZ"];
     
     NSDateFormatter *timeFormatter = [[NSDateFormatter alloc] init];
     [timeFormatter setLocale:[[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"]];
-    [timeFormatter setDateFormat:@"HH:mm:ss"];
     [timeFormatter setTimeZone:[NSTimeZone timeZoneForSecondsFromGMT:0]];
+    [timeFormatter setDateFormat:@"HH:mm:ss"];
 
     NSMutableString *result = [[NSMutableString alloc] init];
     [result appendString:[dateFormatter stringFromDate:self]];
