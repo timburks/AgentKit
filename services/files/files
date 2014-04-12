@@ -21,9 +21,9 @@
 
 (set TOP "TOP")
 
-(set rackspace (RSConnection new))
-(set result (perform (rackspace getAccessTokenForUsername:USERNAME apiKey:APIKEY)))
-(rackspace authenticateWithResult:(result JSONValue))
+;(set rackspace (RSConnection new))
+;(set result (perform (rackspace getAccessTokenForUsername:USERNAME apiKey:APIKEY)))
+;(rackspace authenticateWithResult:(result JSONValue))
 
 ;; create a top node, if none exists
 (def prepare-files ()
@@ -77,6 +77,30 @@
 
 (get "/files/server"
      (+ "http://" ((REQUEST headers) Host:)))
+
+(get "/files/archive.xml"
+     (set mongo (AgentMongoDB new))
+     (mongo connect)
+     (set nodes (mongo findArray:nil inCollection:"files.nodes"))
+     (send &node setEmpty:YES)
+     (+ "<?xml version=\"1.0\"?>"
+        (&files
+               (nodes map:
+                      (do (node)
+                          (+ (&node name:(node name:)
+                                  parent:(node parent:)
+                                  length:(node length:)
+                              collection:(if (node collection:) (then 1) (else nil))
+                                 created:((node created:) agent_rfc3339String)
+                                modified:((node modified:) agent_rfc3339String))
+                             "\n")
+                          )))))
+
+(get "/files/archive.json"
+     (set mongo (AgentMongoDB new))
+     (mongo connect)
+     (set nodes (mongo findArray:nil inCollection:"files.nodes"))
+     (nodes agent_JSONRepresentation))
 
 (def file-exists (path)
      ((NSFileManager defaultManager) fileExistsAtPath:path))

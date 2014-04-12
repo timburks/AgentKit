@@ -1,8 +1,14 @@
+#!/usr/local/bin/nush
+
+(load "AgentHTTP")
+(load "AgentCrypto")
+(load "AgentMongoDB")
+(load "AgentJSON")
 
 (macro ug ()
-       ((dict message:"unimplemented") JSONValue))
+       ((dict message:"unimplemented") agent_JSONRepresentation))
 
-(function uuidgen () ((RadUUID new) stringValue))
+(function uuidgen () ((AgentUUID new) stringValue))
 
 ;;; usergrid-compatible API
 (macro fetch-token ()
@@ -10,7 +16,7 @@
              (set parts (auth componentsSeparatedByString:" "))
              (eq (parts count) 2)
              (eq (parts 0 "Bearer"))
-             (progn (set mongo (RadMongoDB new))
+             (progn (set mongo (AgentMongoDB new))
                     (mongo connect)
                     (set token (mongo findOne:(dict _id:(parts 1)) inCollection:(+ SITE ".access_tokens"))))
              token))
@@ -32,16 +38,29 @@
      (if account
          (then (account removeObjectForKey:"password")
                (account removeObjectForKey:"_id")
-               (set token (dict _id:((RadUUID new) stringValue) account:account))
+               (set token (dict _id:((AgentUUID new) stringValue) account:account))
                (mongo insertObject:token intoCollection:(+ SITE ".access_tokens"))
                ((dict access_token:(token _id:)
                            account:account
-                        expires_in:(* 7 24 3600)) JSONRepresentation))
-         (else ((dict message:"access denied") JSONRepresentation))))
+                        expires_in:(* 7 24 3600)) agent_JSONRepresentation))
+         (else ((dict message:"access denied") agent_JSONRepresentation))))
 
-(get    "/management/organizationid:/applicationid:/token" (ug))
+(get "/management/organizationid:/applicationid:/token"
+     (set result (dict access_token:"YWMtUDD1EsHkEeOl-0M0_K4XvAAAAUV3qiB1s43lcQsEANONJ2yhRuEklcEiaYc"
+                        application:"ea9930b0-9b6f-11e3-adfe-7519d2833186"
+                         expires_in:604800))
+     (result agent_JSONRepresentation))
+
+
+(get "/organizationid:/applicationid:/token"
+     (set result (dict access_token:"YWMtUDD1EsHkEeOl-0M0_K4XvAAAAUV3qiB1s43lcQsEANONJ2yhRuEklcEiaYc"
+                        application:"ea9930b0-9b6f-11e3-adfe-7519d2833186"
+                         expires_in:604800))
+     (result agent_JSONRepresentation))
+
+
 (post   "/management/users"
-        ((dict message:"unimplemented") JSONRepresentation))
+        ((dict message:"unimplemented") agent_JSONRepresentation))
 
 (put    "/management/users/userid:" (ug))
 (get    "/management/users/userid:" (ug))
@@ -56,13 +75,13 @@
 ;; create an organization
 (post "/management/organizations"
       (set startTime ((NSDate date) timeIntervalSince1970))
-      ;(unless (set token (fetch-token)) (return ((dict message:"unauthorized") JSONRepresentation)))
+      ;(unless (set token (fetch-token)) (return ((dict message:"unauthorized") agent_JSONRepresentation)))
       (set POST ((REQUEST body) urlQueryDictionary))
       (set organization-name (POST organization:))
-      (set mongo (RadMongoDB new))
+      (set mongo (AgentMongoDB new))
       (mongo connect)
       (if (set organization (mongo findOne:(dict organization:organization-name) inCollection:(+ SITE ".organizations")))
-          (then ((dict message:"organization already exists") JSONRepresentation))
+          (then ((dict message:"organization already exists") agent_JSONRepresentation))
           (else ;; extract the organization's owner from the POST
                 (set owner (dict username:(POST username:)
                                     email:(POST email:)
@@ -90,14 +109,14 @@
                                         organization:organization)
                                timestamp:((set endTime ((NSDate date) timeIntervalSince1970)) intValue)
                                 duration:((* 1000 (- endTime startTime)) intValue)))
-                (result JSONRepresentation))))
+                (result agent_JSONRepresentation))))
 
 (get "/management/organizations/organizationid:"
-     (set mongo (RadMongoDB new))
+     (set mongo (AgentMongoDB new))
      (mongo connect)
      (if (set organization (mongo findOne:(dict organization:organizationid) inCollection:(+ SITE ".organizations")))
-         (then ((dict message:"organization found" results:organization) JSONRepresentation))
-         (else ((dict message:"organization not found") JSONRepresentation))))
+         (then ((dict message:"organization found" results:organization) agent_JSONRepresentation))
+         (else ((dict message:"organization not found") agent_JSONRepresentation))))
 
 
 (get    "/management/organizations/organizationid:/activate" (ug))
@@ -109,7 +128,7 @@
 ;; create an application
 (post "/management/organizations/organizationid:/applications"
       (set token (fetch-token))
-      ((dict message:"Create an application") JSONRepresentation))
+      ((dict message:"Create an application") agent_JSONRepresentation))
 
 
 
@@ -127,34 +146,63 @@
 (post   "/organizationid:/applicationid:/groups/groupid:/activities" (ug))
 
 (function dbname (organization application)
-          (+ organization ":" application))
+          (+ application))
 
 (function collectionname (database collection)
           (+ database "." collection))
 
 (post   "/organizationid:/applicationid:/collectionid:"
         (set databaseid (dbname organizationid applicationid))
-        (set mongo (RadMongoDB new))
+        (set mongo (AgentMongoDB new))
         (mongo connect)
-        (mongo insertObject:((NSString stringWithData:(REQUEST body) encoding:NSUTF8StringEncoding) JSONValue)
+        (set entity ((NSString stringWithData:(REQUEST body) encoding:NSUTF8StringEncoding) agent_JSONValue))
+        (NSLog "posting into #{collectionid}: #{(entity description)}")
+        (mongo insertObject:entity
              intoCollection:(collectionname databaseid collectionid))
-        ((dict message:"ok") JSONRepresentation))
+        ((dict message:"ok") agent_JSONRepresentation))
 
 
 (get    "/organizationid:/applicationid:/collectionid:/entityid:" (ug))
-(put    "/organizationid:/applicationid:/collectionid:/entityid:" (ug))
-(delete "/organizationid:/applicationid:/collectionid:/entityid:" (ug))
+
+(put    "/organizationid:/applicationid:/collectionid:/entityid:"
+        (set databaseid (dbname organizationid applicationid))
+        (set mongo (AgentMongoDB new))
+        (mongo connect)
+        (set entity ((NSString stringWithData:(REQUEST body) encoding:NSUTF8StringEncoding) agent_JSONValue))
+        
+        (NSLog "putting into #{collectionid}: #{(entity description)}")
+        (mongo removeWithCondition:(dict name:entityid) fromCollection:(collectionname databaseid collectionid))
+        (mongo updateObject:entity
+               inCollection:(collectionname databaseid collectionid)
+              withCondition:(dict name:(entity name:))
+          insertIfNecessary:YES
+      updateMultipleEntries:NO)
+        
+        ((dict message:"ok") agent_JSONRepresentation))
+
+(delete "/organizationid:/applicationid:/collectionid:/entityid:"
+        (set databaseid (dbname organizationid applicationid))
+        (set mongo (AgentMongoDB new))
+        (mongo connect)
+        (mongo removeWithCondition:(dict name:entityid) fromCollection:(collectionname databaseid collectionid))
+        ((dict message:"OK") agent_JSONRepresentation))
 
 
 (get "/organizationid:/applicationid:/collectionid:"
      (set databaseid (dbname organizationid applicationid))
-     (set mongo (RadMongoDB new))
+     (set mongo (AgentMongoDB new))
      (mongo connect)
      (set entities (mongo findArray:nil inCollection:(collectionname databaseid collectionid)))
-     (entities JSONRepresentation))
+     ((dict entities:entities) agent_JSONRepresentation))
 
 (put    "/organizationid:/applicationid:/collectionid:" (ug))
 
+(delete "/organizationid:/applicationid:/collectionid:"
+        (set databaseid (dbname organizationid applicationid))
+        (set mongo (AgentMongoDB new))
+        (mongo connect)
+        (mongo removeWithCondition:nil fromCollection:(collectionname databaseid collectionid))
+        ((dict message:"OK") agent_JSONRepresentation))
 
 (get    "/organizationid:/applicationid:/collectionid:/entityid:/relationship" (ug))
 (post   "/organizationid:/applicationid:/collectionid:/entityid:/relationship/entityid2:" (ug))
@@ -197,5 +245,9 @@
 (get    "/organizationid:/applicationid:/users/userid:/relationship:" (ug))
 (get    "/organizationid:/applicationid:/users/userid:/feed" (ug))
 
+
+(set s ((AgentLibEVHTPServer alloc) initWithService:(AgentHTTPService sharedService)))
+(s setVerbose:YES)
+(s run)
 
 

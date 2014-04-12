@@ -376,14 +376,24 @@ static const char *const hexEncodingTable = "0123456789abcdef";
 // Get an RFC3339-compliant representation of a date.
 - (NSString *) agent_rfc3339String
 {
+    // do this in two parts to work around some GNUstep problems
     NSDateFormatter *dateFormatter = [[NSDateFormatter alloc] init];
     [dateFormatter setLocale:[[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"]];
-    [dateFormatter setDateFormat:@"yyyy'-'MM'-'dd'T'HH':'mm':'ss'Z'"];
+    [dateFormatter setDateFormat:@"yyyy-MM-dd"];
     [dateFormatter setTimeZone:[NSTimeZone timeZoneForSecondsFromGMT:0]];
+    
+    NSDateFormatter *timeFormatter = [[NSDateFormatter alloc] init];
+    [timeFormatter setLocale:[[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"]];
+    [timeFormatter setDateFormat:@"HH:mm:ss"];
+    [timeFormatter setTimeZone:[NSTimeZone timeZoneForSecondsFromGMT:0]];
+
     NSMutableString *result = [[NSMutableString alloc] init];
     [result appendString:[dateFormatter stringFromDate:self]];
-    [result insertString:@":" atIndex:([result length] - 2)];
+    [result appendString:@"T"];
+    [result appendString:[dateFormatter stringFromDate:self]];
+    [result appendString:@"Z"];
     return result;
 }
+
 @end
 

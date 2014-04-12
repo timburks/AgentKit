@@ -7,6 +7,7 @@
        (do (file)
            (unless (or (/^build$/ findInString:file)
                        (/^Nukefile$/ findInString:file)
+                       (/^data$/ findInString:file)
                        (/^test$/ findInString:file))
                    (SH "cp -r #{file} build/#{(APP name:)}.app"))))
       (SH "cd build; zip -r #{(APP name:)}.zip #{(APP name:)}.app"))
