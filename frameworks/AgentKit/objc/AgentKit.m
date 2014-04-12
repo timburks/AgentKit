@@ -15,7 +15,6 @@
     NSBundle *framework = [NSBundle frameworkWithName:@"AgentKit"];
     NSMutableDictionary *mainContext = [[Nu sharedParser] context];
     [framework loadNuFile:@"common" withContext:mainContext];
-    NSLog(@"AgentKit loaded");
 }
 
 @end

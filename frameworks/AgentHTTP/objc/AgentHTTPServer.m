@@ -20,7 +20,6 @@
     NSBundle *framework = [NSBundle frameworkWithName:@"AgentHTTP"];
     NSMutableDictionary *mainContext = [[Nu sharedParser] context];
     [framework loadNuFile:@"macros" withContext:mainContext];
-    NSLog(@"AgentHTTPServer loaded");
 }
 
 - (id)initWithService:(AgentHTTPService *) service

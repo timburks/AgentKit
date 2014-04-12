@@ -12,6 +12,7 @@
                       (&meta name:"description" content:"My Agent on the Internet")
                       (&meta name:"author" content:"Agent I/O")
                       (&title ,title)
+                      (&link rel:"icon" href:"/icon.png" type:"image/png")
                       (&link rel:"stylesheet" href:"/foundation-5/css/foundation.min.css")
                       (&script src:"/foundation-5/js/vendor/modernizr.js"))
                (&body ,@*body
