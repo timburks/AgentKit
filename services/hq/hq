@@ -127,13 +127,18 @@
                                                       (subarray map:
                                                                 (do (app) (&div class:"small-4 columns end"
                                                                                 (&div class:"panel"
-                                                                                      (&h5 (if (and (app path:) ((app path:) length))
-                                                                                               (then (&a href:(+ "/" (app path:))
-                                                                                                         (app name:)))
-                                                                                               (else (&a href:(((app domains:) componentsSeparatedByString:" ") objectAtIndex:0)
-                                                                                                         (app name:)))))
-                                                                                      (&p (&a href:(+ "/apps/manage/" (app _id:))
-                                                                                              "manage it"))
+                                                                                      (&h5 (&strong (if (and (app path:) ((app path:) length))
+                                                                                                        (then (&a href:(+ "/" (app path:))
+                                                                                                                  (app name:)))
+                                                                                                        (else (&a href:(+ "http://"
+                                                                                                                          (((app domains:) componentsSeparatedByString:" ") objectAtIndex:0))
+                                                                                                                  (app name:))))))
+                                                                                      
+                                                                                      (&p (if (app deployment:)
+                                                                                              (then (&span style:"color:green;" (&em "running")))
+                                                                                              (else (&span style:"color:red;" (&em "off")))) " "
+                                                                                          (&a href:(+ "/apps/manage/" (app _id:))
+                                                                                              "manage"))
                                                                                       )))))))))
                                (&div class:"medium-3 small-12 columns"
                                      (&div class:"panel"

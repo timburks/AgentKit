@@ -41,3 +41,9 @@
 @end
 
 
+@interface NSData (AgentJSON)
+
+/// Returns the dictionary or array represented in the receiver, or nil on error.
+- (id) agent_JSONValue;
+
+@end

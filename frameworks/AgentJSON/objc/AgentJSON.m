@@ -1002,3 +1002,14 @@ static char ctrl[0x22];
 }
 
 @end
+    
+    
+@implementation NSData (AgentJSON)
+    
+- (id) agent_JSONValue
+{
+    NSString *string = [[NSString alloc] initWithData:self encoding:NSUTF8StringEncoding];
+    return [string agent_JSONValue];
+}
+    
+@end
