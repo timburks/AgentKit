@@ -11,31 +11,33 @@
                                      (&form method:"post"
                                             action:"/signin/"
                                             (&fieldset (&legend ,message)
-                                                       (&label for:"username" "Username "
-                                                             style:"margin-right:2em"
-                                                               (&input id:"username"
-                                                                     type:"text"
-                                                                    width:20
-                                                                     name:"username"
-                                                                    title:"username"
-                                                                    value:,username))
-                                                       (&label for:"password" "Password "
-                                                             style:"margin-right:2em"
-                                                               (&input id:"password"
-                                                                     type:"password"
-                                                                    width:20
-                                                                     name:"password"
-                                                                    title:"password"
-                                                                    value:,password))
-                                                       (&button class:"button tiny"
-                                                                 type:"submit"
-                                                                "&nbsp;Sign in&nbsp;"))))))))
+                                                       (&div (&label for:"username" "Username "
+                                                                   style:"margin-right:2em"
+                                                                     (&input id:"username"
+                                                                           type:"text"
+                                                                          width:20
+                                                                           name:"username"
+                                                                          title:"username"
+                                                                          value:,username))
+                                                             (&label for:"password" "Password "
+                                                                   style:"margin-right:2em"
+                                                                     (&input id:"password"
+                                                                           type:"password"
+                                                                          width:20
+                                                                           name:"password"
+                                                                          title:"password"
+                                                                          value:,password))
+                                                             (&button class:"button tiny"
+                                                                       type:"submit"
+                                                                      "&nbsp;Sign in&nbsp;"))
+                                                       
+                                                       )))))))
 
 (get "/signin"
      (authenticate)
      (if screen_name
          (then (redirect "/accounts"))
-         (else (signin-form "" "" "Hello!"))))
+         (else (signin-form "" "" "Hello, Chief!"))))
 
 (post "/signin"
       (set mongo (AgentMongoDB new))

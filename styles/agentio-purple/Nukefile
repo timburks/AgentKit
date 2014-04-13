@@ -1,0 +1,9 @@
+
+;; see http://foundation.zurb.com/docs/sass.html for instructions
+;; on installing the necessary dependencies
+
+(task "deploy" is
+      (system "grunt build")
+      (system "scp css/app.css root@alpha.agent.io:/home/control/public/foundation-5/css"))
+
+(task "default" => "deploy")
