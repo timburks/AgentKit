@@ -51,20 +51,20 @@
        (set additional-items (array (&li class:"divider")
                                     (&li class:"has-dropdown" (&a href:"#" "system...")
                                          (&ul class:"dropdown"
-                                              (&li (&a href:"/chief/nginx" "nginx"))
+                                              (&li (&a href:"/apps/nginx" "nginx"))
                                               (&li class:"divider")
-                                              (&li (&a href:"/chief/mongodb" "mongodb"))))
+                                              (&li (&a href:"/apps/mongodb" "mongodb"))))
                                     (&li class:"divider")
                                     (&li class:"has-dropdown" (&a href:"#" "apps...")
                                          (&ul class:"dropdown"
                                               (barapps map:(do (app)
-                                                               (&li (&a href:(+ "/chief/apps/manage/" (app _id:))
+                                                               (&li (&a href:(+ "/apps/apps/manage/" (app _id:))
                                                                         (app name:)))))
                                               (&li class:"divider")
-                                              (&li (&a href:"/chief/apps/add" "Add an app"))))))
+                                              (&li (&a href:"/apps/apps/add" "Add an app"))))))
        (topbar-for-app "CHIEF" additional-items))
 
-(get "/chief"
+(get "/apps"
      (authenticate)
      (if screen_name
          (then (set myapps (mongo findArray:(dict $query:(dict)
@@ -92,17 +92,17 @@
                                                                     (else (set link (+ "http://" (((app domains:) componentsSeparatedByString:" ") 0)))))
                                                                 (&div (&h3 (&a href:link (app name:)))
                                                                       (&p (app description:))
-                                                                      (&p (&a href:(+ "/chief/apps/manage/" (app _id:)) "Manage it.")))))))))))))
+                                                                      (&p (&a href:(+ "/apps/apps/manage/" (app _id:)) "Manage it.")))))))))))))
          (else nil)))
 
-(get "/chief/apps/add"
+(get "/apps/apps/add"
      (require-user)
      (htmlpage "Add an app"
                (&& (topbar)
                    (&div class:"row"
                          (&div class:"large-12 columns"
                                (&h1 "Add an app")
-                               (&form action:"/chief/apps/add/"
+                               (&form action:"/apps/apps/add/"
                                           id:"edit" method:"post"
                                       (&dl (&dt (&label for:"app_name" "App name"))
                                            (&dd (&input id:"app_name" name:"name" size:"40" type:"text"))
@@ -119,7 +119,7 @@
                                                          rows:"5" cols:"60")))
                                       (&input name:"save" type:"submit" value:"Save")
                                       " or "
-                                      (&a href:"/chief" "Cancel")))))))
+                                      (&a href:"/apps" "Cancel")))))))
 
 (def add-app (app)
      (mongo-connect)
@@ -154,7 +154,7 @@
      (puts "#{((responsep value) statusCode)}: #{string}")
      result)
 
-(post "/chief/apps/add"
+(post "/apps/apps/add"
       (require-user)
       (set path "http://localhost:2010/control/apps")
       (set URL (NSURL URLWithString:path))
@@ -165,9 +165,9 @@
       (request setValue:"Basic #{auth}" forHTTPHeaderField:"Authorization")
       (set result (NSURLConnection sendSynchronousRequest:request returningResponse:(set responsep (NuReference new)) error:(set errorp (NuReference new))))
       (set appid ((NSString alloc) initWithData:result encoding:NSUTF8StringEncoding))
-      (RESPONSE redirectResponseToLocation:(+ "/chief/apps/manage/" appid)))
+      (RESPONSE redirectResponseToLocation:(+ "/apps/apps/manage/" appid)))
 
-(get "/chief/apps/manage/appid:"
+(get "/apps/apps/manage/appid:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
      (mongo-connect)
@@ -198,14 +198,14 @@
                                                                   (rss-date-formatter stringFromDate:(version created_at:))
                                                                   (&br)
                                                                   (version version:))
-                                                             (&td (&a href:(+ "/chief/apps/manage/delete/" appid "/" (version version:))
+                                                             (&td (&a href:(+ "/apps/apps/manage/delete/" appid "/" (version version:))
                                                                       "Delete"))
-                                                             (&td (&a href:(+ "/chief/apps/manage/deploy/" appid "/" (version version:))
+                                                             (&td (&a href:(+ "/apps/apps/manage/deploy/" appid "/" (version version:))
                                                                       "Deploy")))))))
                                      (else (&p "No versions have been uploaded.")))
                                  (if (app deployment:)
                                      (+
-                                       (&span style:"float:right" (&a href:(+ "/chief/apps/manage/stop/" (app _id:)) "Stop"))
+                                       (&span style:"float:right" (&a href:(+ "/apps/apps/manage/stop/" (app _id:)) "Stop"))
                                        (&h3 "Deployment")
                                        (&table class:"table table-bordered"
                                                (&tr (&td "name") (&td ((app deployment:) name:)))
@@ -214,20 +214,20 @@
                                                 (do (worker)
                                                     (+ (&tr (&td (&strong "worker"))
                                                             (&td (worker host:) ":" (worker port:)))
-                                                       (&tr (&td) (&td (&a href:(+ "/chief/apps/manage/" appid "/" (worker container:))
+                                                       (&tr (&td) (&td (&a href:(+ "/apps/apps/manage/" appid "/" (worker container:))
                                                                            (worker container:))))))))))
-                                 (&form action:(+ "/chief/apps/upload/" appid)
+                                 (&form action:(+ "/apps/apps/upload/" appid)
                                         method:"post"
                                        enctype:"multipart/form-data"
                                         (&p "To upload a new version of this app:")
                                         (&input type:"file" name:"appfile" size:40)
                                         (&input type:"submit" name:"upload" value:"upload"))
                                  (&hr style:"margin-top:2em;")
-                                 (&a href:(+ "/chief/apps/edit/" appid) "Edit this app")
+                                 (&a href:(+ "/apps/apps/edit/" appid) "Edit this app")
                                  " | "
-                                 (&a href:(+ "/chief/apps/delete/" appid) "Delete this app"))))))
+                                 (&a href:(+ "/apps/apps/delete/" appid) "Delete this app"))))))
 
-(get "/chief/apps/manage/stop/appid:"
+(get "/apps/apps/manage/stop/appid:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
      (mongo-connect)
@@ -244,9 +244,9 @@
      (set auth (("admin:master123" dataUsingEncoding:NSUTF8StringEncoding) agent_base64EncodedString))
      (request setValue:"Basic #{auth}" forHTTPHeaderField:"Authorization")
      (set result (NSURLConnection sendSynchronousRequest:request returningResponse:(set responsep (NuReference new)) error:(set errorp (NuReference new))))
-     (RESPONSE redirectResponseToLocation:(+ "/chief/apps/manage/" appid)))
+     (RESPONSE redirectResponseToLocation:(+ "/apps/apps/manage/" appid)))
 
-(get "/chief/apps/manage/delete/appid:/version:"
+(get "/apps/apps/manage/delete/appid:/version:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
      (mongo-connect)
@@ -265,9 +265,9 @@
      (mongo removeFile:version
           inCollection:"appfiles"
             inDatabase:"control")
-     (RESPONSE redirectResponseToLocation:(+ "/chief/apps/manage/" appid)))
+     (RESPONSE redirectResponseToLocation:(+ "/apps/apps/manage/" appid)))
 
-(get "/chief/apps/manage/deploy/appid:/version:"
+(get "/apps/apps/manage/deploy/appid:/version:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
      (mongo-connect)
@@ -284,9 +284,9 @@
      (request setValue:"Basic #{auth}" forHTTPHeaderField:"Authorization")
      (set result (NSURLConnection sendSynchronousRequest:request returningResponse:(set responsep (NuReference new)) error:(set errorp (NuReference new))))
      
-     (RESPONSE redirectResponseToLocation:(+ "/chief/apps/manage/" appid)))
+     (RESPONSE redirectResponseToLocation:(+ "/apps/apps/manage/" appid)))
 
-(post "/chief/apps/upload/appid:"
+(post "/apps/apps/upload/appid:"
       (puts "UPLOAD")
       (require-user)
       (set appid ((REQUEST bindings) appid:))
@@ -303,11 +303,11 @@
           (then ;; save appfile
                 (puts "saving")
                 (add-version app appfile-name appfile-data)))
-      (RESPONSE redirectResponseToLocation:(+ "/chief/apps/manage/" appid)))
+      (RESPONSE redirectResponseToLocation:(+ "/apps/apps/manage/" appid)))
 
 ;;=== Me ===
 
-(get "/chief/apps/edit/appid:"
+(get "/apps/apps/edit/appid:"
      (require-user)
      (mongo-connect)
      (set appid ((REQUEST bindings) appid:))
@@ -318,7 +318,7 @@
                      (&div class:"row"
                            (&div class:"large-12 columns"
                                  (&h1 "Editing " (app name:))
-                                 (&form action:(+ "/chief/apps/edit/" appid)
+                                 (&form action:(+ "/apps/apps/edit/" appid)
                                             id:"edit" method:"post"
                                         (&dl (&dt (&label for:"app_name" "App name"))
                                              (&dd (&input id:"app_name" name:"name" size:"40" type:"text" value:(app name:)))
@@ -335,9 +335,9 @@
                                                             rows:"5" cols:"60" (app description:))))
                                         (&input name:"save" type:"submit" value:"Save")
                                         " or "
-                                        (&a href:"/chief" "Cancel")))))))
+                                        (&a href:"/apps" "Cancel")))))))
 
-(post "/chief/apps/edit/appid:"
+(post "/apps/apps/edit/appid:"
       (require-user)
       (set appid ((REQUEST bindings) appid:))
       (mongo-connect)
@@ -354,9 +354,9 @@
             withCondition:(dict _id:(oid appid))
         insertIfNecessary:NO
     updateMultipleEntries:NO)
-      (RESPONSE redirectResponseToLocation:(+ "/chief/apps/manage/" appid)))
+      (RESPONSE redirectResponseToLocation:(+ "/apps/apps/manage/" appid)))
 
-(get "/chief/apps/delete/appid:"
+(get "/apps/apps/delete/appid:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
      (mongo-connect)
@@ -371,13 +371,13 @@
                                          (&tr (&td "domains" (&td (app domains:))))
                                          (&tr (&td "description" (&td (app description:)))))
                                  (&h2 "WARNING: there is no undo.")
-                                 (&form action:(+ "/chief/apps/delete/" appid)
+                                 (&form action:(+ "/apps/apps/delete/" appid)
                                         method:"POST"
                                         (&input type:"submit" name:"submit" value:"OK")
                                         "&nbsp;"
                                         (&input type:"submit" name:"submit" value:"Cancel")))))))
 
-(post "/chief/apps/delete/appid:"
+(post "/apps/apps/delete/appid:"
       (require-user)
       (set appid ((REQUEST bindings) appid:))
       (mongo-connect)
@@ -398,9 +398,9 @@
                                 (&div class:"row"
                                       (&div class:"large-12 columns"
                                             (&h2 "It's gone.")))))))
-      (else (RESPONSE redirectResponseToLocation:"/chief")))
+      (else (RESPONSE redirectResponseToLocation:"/apps")))
 
-(get "/chief/apps/manage/appid:/container:"
+(get "/apps/apps/manage/appid:/container:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
      (mongo-connect)
@@ -414,13 +414,13 @@
                          (&div (topbar)
                                (&div class:"row"
                                      (&div class:"large-12 columns"
-                                           (&h1 "Worker for " (&a href:(+ "/chief/apps/manage/" appid) (app name:)))
+                                           (&h1 "Worker for " (&a href:(+ "/apps/apps/manage/" appid) (app name:)))
                                            (&pre (worker description))
-                                           (&ul (&li (&a href:(+ "/chief/apps/manage/" appid "/" container "/upstart.conf") "upstart.conf"))
-                                                (&li (&a href:(+ "/chief/apps/manage/" appid "/" container "/worker.log") "worker.log"))))))))
+                                           (&ul (&li (&a href:(+ "/apps/apps/manage/" appid "/" container "/upstart.conf") "upstart.conf"))
+                                                (&li (&a href:(+ "/apps/apps/manage/" appid "/" container "/worker.log") "worker.log"))))))))
          (else "not found")))
 
-(get "/chief/apps/manage/appid:/container:/file:"
+(get "/apps/apps/manage/appid:/container:/file:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
      (mongo-connect)
@@ -449,7 +449,7 @@
          (else nil)))
 
 
-(get "/chief/mongodb"
+(get "/apps/mongodb"
      (require-user)
      (mongo-connect)
      (set collections ((mongo collectionNamesInDatabase:"control") sort))
@@ -462,9 +462,9 @@
                                          (collections mapWithIndex:
                                                       (do (collection index)
                                                           (&tr (&td (+ index 1) ". "
-                                                                    (&a href:(+ "/chief/browse/" collection) collection)))))))))))
+                                                                    (&a href:(+ "/apps/browse/" collection) collection)))))))))))
 
-(get "/chief/browse/collection:"
+(get "/apps/browse/collection:"
      (require-user)
      (mongo-connect)
      (set collection ((REQUEST bindings) collection:))
@@ -479,17 +479,17 @@
                                                 (&div (&h4 (document _id:))
                                                       (&pre (document description))))))))))
 
-(get "/chief/nginx"
+(get "/apps/nginx"
      (require-user)
      (REQUEST setContentType:"text/html")
      (htmlpage "AgentBox nginx.conf"
                (&div (topbar)
                      (&div class:"row"
                            (&div class:"large-12 columns"
-                                 (&h1 "AgentBox nginx.conf " (&a href:"/chief/restart-nginx" "(restart)"))
+                                 (&h1 "AgentBox nginx.conf " (&a href:"/apps/restart-nginx" "(restart)"))
                                  (&pre class:"code" (NSString stringWithContentsOfFile:"/etc/nginx/nginx.conf")))))))
 
-(get "/chief/restart-nginx"
+(get "/apps/restart-nginx"
      (require-user)
      (set path "http://localhost:2010/control/nginx/restart")
      (set URL (NSURL URLWithString:path))
@@ -498,7 +498,7 @@
      (set auth (("admin:master123" dataUsingEncoding:NSUTF8StringEncoding) agent_base64EncodedString))
      (request setValue:"Basic #{auth}" forHTTPHeaderField:"Authorization")
      (set result (NSURLConnection sendSynchronousRequest:request returningResponse:(set responsep (NuReference new)) error:(set errorp (NuReference new))))
-     (RESPONSE redirectResponseToLocation:"/chief"))
+     (RESPONSE redirectResponseToLocation:"/apps"))
 
 ;;; site management
 
@@ -509,7 +509,7 @@
                         (do (key)
                             (&tr (&td key) (&td (&pre (dictionary objectForKey:key))))))))
 
-(get "/chief/environment"
+(get "/apps/environment"
      (set environment ((NSProcessInfo processInfo) environment))
      (&html (&head (&link href:"/foundation/css/normalize.css" rel:"stylesheet")
                    (&link href:"/foundation/css/foundation.min.css" rel:"stylesheet"))

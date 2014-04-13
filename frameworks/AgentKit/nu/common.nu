@@ -1,5 +1,7 @@
 (set PASSWORD_SALT "agent.io")
 
+(global &+ (NuMarkupOperator operatorWithTag:nil))
+
 (macro redirect (location)
        `(progn (RESPONSE setStatus:303)
                (RESPONSE setValue:,location forHTTPHeader:"Location")
@@ -13,7 +15,7 @@
                       (&meta name:"author" content:"Agent I/O")
                       (&title ,title)
                       (&link rel:"icon" href:"/icon.png" type:"image/png")
-                      (&link rel:"stylesheet" href:"/foundation-5/css/foundation.min.css")
+                      (&link rel:"stylesheet" href:"/foundation-5/css/app.css")
                       (&script src:"/foundation-5/js/vendor/modernizr.js"))
                (&body ,@*body
                       (&script src:"/foundation-5/js/vendor/jquery.js")
@@ -49,7 +51,7 @@
 
 (macro topbar-for-app (appname additional-items)
        `(progn (set available-apps (array (dict name:"ACCOUNTS" path:"/accounts")
-                                          (dict name:"CHIEF" path:"/chief")
+                                          (dict name:"APPS" path:"/apps")
                                           (dict name:"FILES" path:"/files")
                                           (dict name:"MDM" path:"/mdm")))
                
@@ -65,7 +67,7 @@
                      (&nav class:"top-bar" data-topbar:1
                            (&ul class:"title-area"
                                 (&li class:"name"
-                                     (&h1 (&a href:(current-app path:) (current-app name:))))
+                                     (&h1 (&a href:"/hq" "Agent I/O")))
                                 (&li class:"toggle-topbar menu-icon" (&a href:"#" "Menu")))
                            (&section class:"top-bar-section"
                                      ;;<!-- Right Nav Section -->
@@ -78,11 +80,14 @@
                                      ;;<!-- Left Nav Section -->
                                      (if screen_name
                                          (&ul class:"left"
-                                              ,additional-items
-                                              ((available-apps select:(do (app) (ne (app name:) ,appname))) map:
-                                               (do (app)
-                                                   (+ (&li class:"divider")
-                                                      (&li (&a href:(app path:) (app name:)))))))))))))
+                                              (available-apps map:
+                                                              (do (app)
+                                                                  (+ (&li class:"divider")
+                                                                     (&li (&a href:(app path:) (app name:)))
+                                                                     (if (eq (app name:) appname)
+                                                                         (then (&+ ,additional-items))
+                                                                         (else ""))))))))))))
+
 
 (macro mongo-connect ()
        `(progn (unless (defined mongo)

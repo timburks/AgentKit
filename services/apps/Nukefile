@@ -1,7 +1,7 @@
 (load "AgentKit:tasks")
 
-(set APP (dict name:"chief"
-               path:"chief"
+(set APP (dict name:"apps"
+               path:"apps"
             workers:1
             domains:""
         description:"Agent app manager."))
