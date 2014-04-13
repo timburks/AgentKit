@@ -68,16 +68,19 @@
                (&div class:"contain-to-grid" style:"margin-bottom:20px;"
                      (&nav class:"top-bar" data-topbar:1
                            (&ul class:"title-area"
+                                (&li class:"divider")
                                 (&li class:"name"
-                                     (&h1 (&a href:"/hq" "Agent I/O")))
+                                     (&h1 (&a href:"/hq" "alpha")))
+                                (&li class:"divider")
                                 (&li class:"toggle-topbar menu-icon" (&a href:"#" "Menu")))
                            (&section class:"top-bar-section"
                                      ;;<!-- Right Nav Section -->
                                      (if screen_name
                                          (&ul class:"right"
                                               (&li (&a href:"#" screen_name))
+                                              (&li class:"active" (&a href:"#" "Sign out" onclick:(js-post "/accounts/signout" nil)))
                                               (&li class:"divider")
-                                              (&li class:"active" (&a href:"#" "Sign out" onclick:(js-post "/accounts/signout" nil)))))
+                                              ))
                                      
                                      ;;<!-- Left Nav Section -->
                                      (if screen_name
