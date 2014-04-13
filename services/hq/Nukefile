@@ -1,0 +1,10 @@
+(load "AgentKit:tasks")
+
+(set APP (dict name:"hq"
+               path:"hq"
+            workers:1
+            domains:""
+        description:"Agent headquarters."))
+
+(set AGENT "https://alpha.agent.io")
+(set CREDENTIALS "admin:master123")

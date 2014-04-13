@@ -36,7 +36,7 @@
 (get "/signin"
      (authenticate)
      (if screen_name
-         (then (redirect "/accounts"))
+         (then (redirect "/hq"))
          (else (signin-form "" "" "Hello, Chief!"))))
 
 (post "/signin"
@@ -64,7 +64,7 @@
                    withCondition:(dict account_id:(account _id:))
                insertIfNecessary:YES
            updateMultipleEntries:NO)
-             (RESPONSE redirectResponseToLocation:"/accounts"))
+             (RESPONSE redirectResponseToLocation:"/hq"))
             (else (set message "We didn't recognize that username and password.")
                   (signin-form username password message))))
 

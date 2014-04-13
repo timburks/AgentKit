@@ -184,7 +184,8 @@
                 (htmlpage "path"
                           (topbar-for-app "FILES" "")
                           (&div class:"row"
-                                (&div class:"medium-8 medium-centered small-12 columns"
+                                (&div class:"medium-8 small-12 columns"
+                                      (&h1 "Files")
                                       (&p (&a href:UP (+ "/" *path)))
                                       (&ul (children map:(do (child) (&li (&a href:(+ PATH "/" (child name:)) (child name:))))))))))))
 

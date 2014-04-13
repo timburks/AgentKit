@@ -52,8 +52,10 @@
 (macro topbar-for-app (appname additional-items)
        `(progn (set available-apps (array (dict name:"ACCOUNTS" path:"/accounts")
                                           (dict name:"APPS" path:"/apps")
+                                          (dict name:"COLLECTIONS" path:"/collections")
+                                          (dict name:"DEVICES" path:"/devices")
                                           (dict name:"FILES" path:"/files")
-                                          (dict name:"MDM" path:"/mdm")))
+                                          (dict name:"MESSAGES" path:"/messages")))
                
                (set current-app (available-apps find:(do (app) (eq (app name:) ,appname))))
                
@@ -84,7 +86,7 @@
                                                               (do (app)
                                                                   (+ (&li class:"divider")
                                                                      (&li (&a href:(app path:) (app name:)))
-                                                                     (if (eq (app name:) appname)
+                                                                     (if (eq (app name:) ,appname)
                                                                          (then (&+ ,additional-items))
                                                                          (else ""))))))))))))
 

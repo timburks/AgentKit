@@ -1,0 +1,254 @@
+#!/usr/local/bin/nush
+(load "AgentHTTP")
+(load "AgentCrypto")
+(load "AgentMongoDB")
+(load "AgentJSON")
+(load "AgentKit")
+
+(def oid (string) ;; MongoDB helper
+     ((AgentBSONObjectID alloc) initWithString:string))
+
+(macro redirect (location)
+       `(progn (RESPONSE setStatus:303)
+               (RESPONSE setValue:,location forHTTPHeader:"Location")
+               "redirecting"))
+
+(def nonce () ((AgentUUID new) stringValue))
+
+(set PASSWORD_SALT "agent.io")
+(class NSString
+ (- (id) md5HashWithSalt:(id) salt is
+    (((self dataUsingEncoding:NSUTF8StringEncoding)
+      agent_hmacMd5DataWithKey:(salt dataUsingEncoding:NSUTF8StringEncoding))
+     agent_hexEncodedString)))
+
+(class NSNumber
+ (- map:fn is
+    (set result (array))
+    (self times:(do (i) (result addObject:(fn i))))
+    result))
+
+(macro get-user (REQUEST)
+       `(progn (set screen_name nil)
+               (set session nil)
+               (if (set token ((,REQUEST cookies) session:))
+                   (set mongo (AgentMongoDB new))
+                   (mongo connect)
+                   (set session (mongo findOne:(dict cookie:token) inCollection:"accounts.sessions"))
+                   (set screen_name (session username:)))
+               (set session (dict screen_name:(set screen_name:"testing")))
+               session))
+
+(set ADMIN "tim")
+
+(macro administrator-is-logged-in (REQUEST)
+       `(progn (unless (and (defined screen_name) screen_name)
+                       (get-user ,REQUEST))
+               (and screen_name (eq screen_name ADMIN))))
+
+(macro authenticate ()
+       '(progn (get-user REQUEST)))
+
+;;;;;
+
+
+
+(def escape (string)
+     (set string (string stringByReplacingOccurrencesOfString:"&" withString:"&amp;"))
+     (set string (string stringByReplacingOccurrencesOfString:"<" withString:"&lt;"))
+     (set string (string stringByReplacingOccurrencesOfString:">" withString:"&gt;"))
+     (set string (string stringByReplacingOccurrencesOfString:"\"" withString:"&quot;"))
+     string)
+
+(def js-delete (path)
+     (+ "$.ajax({url:'" path "',type:'DELETE',success:function(response) {location.reload(true);}}); return false;"))
+
+(def js-post (path arguments)
+     (set command (+ "var form = document.createElement('form');"
+                     "form.setAttribute('method', 'POST');"
+                     "form.setAttribute('action', '" path "');"))
+     (arguments each:
+                (do (key value)
+                    (command appendString:(+ "var field = document.createElement('input');"
+                                             "field.setAttribute('name', '" key "');"
+                                             "field.setAttribute('value', '" value "');"
+                                             "form.appendChild(field);"))))
+     (command appendString:"form.submit();")
+     (command appendString:"return false;")
+     command)
+
+(macro topbar-empty ()
+       (&div class:"contain-to-grid" style:"margin-bottom:20px;"
+             (&nav class:"top-bar" data-topbar:1)))
+
+(macro topbar ()
+       (set additional-items nil)
+       (topbar-for-app "Agent I/O" additional-items))
+
+(get "/hq"
+     (authenticate)
+     (set mongo (AgentMongoDB new))
+     (mongo connect)
+     
+     (set apps (mongo findArray:(dict $query:(dict) $orderby:(dict name:1)) inCollection:"control.apps"))
+     (set databases ((mongo runCommand:(dict listDatabases:1) inDatabase:"admin") databases:))
+     (set devices (mongo findArray:nil inCollection:"mdm.devices"))
+     
+     (set files (mongo findOne:(dict $query:(dict parent:"TOP") $orderby:(dict name:1)) inCollection:"files.nodes"))
+     (set files (mongo findArray:(dict $query:(dict parent:(files _id:)) $orderby:(dict name:1)) inCollection:"files.nodes"))
+     
+     (set connections (mongo findArray:nil inCollection:"accounts.connections"))
+     (set users (mongo findArray:nil inCollection:"accounts.users"))
+     
+     (if screen_name
+         (then (htmlpage "Agent HQ"
+                         (topbar)
+                         (&div class:"row"
+                               (&div class:"medium-3 small-12 columns"
+                                     (&img src:"/img/agentio-512.png")
+                                     (&h2 style:"text-align:center" "Agent HQ")
+                                     (&div class:"panel"
+                                           (&h3 (&a href:"/accounts" "users"))
+                                           (&ul (users map:
+                                                       (do (user) (&li (user username:))))))
+                                     (&div class:"panel"
+                                           (&h3 (&a href:"/devices" "devices"))
+                                           (&ul (devices map:
+                                                         (do (device) (&li ((device DeviceInformation:) DeviceName:) " ("
+                                                                           ((device DeviceInformation:) ModelName:) ")"))))))
+                               (&div class:"medium-6 small-12 columns"
+                                     (&div class:"panel"
+                                           (&h3 (&a href:"/messages" "messages")))
+                                     (&div class:"panel"
+                                           (&h3 (&a href:"/apps" "apps"))
+                                           ((apps subarraysOfN:3) map:
+                                            (do (subarray)
+                                                (&div class:"row"
+                                                      (subarray map:
+                                                                (do (app) (&div class:"small-4 columns end"
+                                                                                (&div class:"panel"
+                                                                                      (&h5 (if (and (app path:) ((app path:) length))
+                                                                                               (then (&a href:(+ "/" (app path:))
+                                                                                                         (app name:)))
+                                                                                               (else (&a href:(((app domains:) componentsSeparatedByString:" ") objectAtIndex:0)
+                                                                                                         (app name:)))))
+                                                                                      (&p (&a href:(+ "/apps/manage/" (app _id:))
+                                                                                              "manage it"))
+                                                                                      )))))))))
+                               (&div class:"medium-3 small-12 columns"
+                                     (&div class:"panel"
+                                           (&h3 (&a href:"/files" "files"))
+                                           (&ul (files map:
+                                                       (do (file) (&li (file name:))))))
+                                     (&div class:"panel"
+                                           (&h3 (&a href:"/collections" "collections"))
+                                           (&ul (databases map:
+                                                           (do (database) (&li (&a href:(+ "/collections/" (database name:)) (database name:)))))))
+                                     (&div class:"panel"
+                                           (&h3 (&a href:"/accounts" "connections"))
+                                           (&ul (connections map:
+                                                             (do (connection) (&li (connection provider:))))))))))
+         (else (redirect "/signin"))))
+
+(def fields-for-value (value)
+     (cond ((value isKindOfClass:NSDictionary)
+            (&fieldset (((value allKeys) sort) map:
+                        (do (key)
+                            (&label key
+                                    (fields-for-value (value key)))))))
+           ((value isKindOfClass:NSArray)
+            (value map:(do (item) (fields-for-value item))))
+           (else (&input type:"text" value:value))))
+
+(get "/edit/database:/collection:/item:"
+     (authenticate)
+     (set mongo (AgentMongoDB new))
+     (mongo connect)
+     (set entity (mongo findOne:(dict _id:(oid item))
+                   inCollection:(+ database "." collection)))
+     (if screen_name
+         (then (htmlpage "Agent I/O"
+                         (topbar)
+                         (&div class:"row"
+                               (&div class:"medium-8 medium-centered small-12 columns"
+                                     (if entity
+                                         (then (&div (&h2 database "." collection)
+                                                     (&form (&fieldset (&legend (entity _id:))
+                                                                       (((entity allKeys) sort) map:
+                                                                        (do (key) (if (eq key "_id")
+                                                                                      (then "")
+                                                                                      (else (&label key (fields-for-value (entity key)))))))))
+                                                     (&pre style:"word-wrap:break-word;" (entity description))
+                                                     ))
+                                         (else (&h3 "Not found #{collection} #{item}")))))))
+         (else (redirect "/signin"))))
+
+
+(def row-of-one (item1)
+     (&div class:"row" (&div class:"large-12 small-12 columns" item1)))
+
+(def row-of-two (item1 item2)
+     (&div class:"row" (&div class:"large-6 small-6 columns" item1) (&div class:"large-6 small-6 columns" item2)))
+
+
+(set MAXW 48)
+
+(def value-for-entry (entry)
+     (cond ((entry isKindOfClass:NSDictionary)
+            (table-for-dictionary entry))
+           ((entry isKindOfClass:NSDate)
+            (entry description)
+            )
+           (else (set string (entry stringValue))
+                 (if (> (string length) MAXW)
+                     (set string (+ (string substringToIndex:(- MAXW 3)) "...")))
+                 string)))
+
+(def table-for-dictionary (dictionary)
+     (set keys ((dictionary allKeys) sort))
+     (&table style:"width:100%; "
+             (&tbody
+                    (keys map:
+                          (do (key)
+                              (&tr (&td style:"width:85%; word-wrap:break-word;"
+                                        (&strong key) (&br)
+                                        (value-for-entry (dictionary objectForKey:key)))))))))
+
+(def dvalue-for-entry (entry)
+     (cond ((entry isKindOfClass:NSDictionary)
+            (divs-for-dictionary entry))
+           ((entry isKindOfClass:NSDate)
+            (entry description))
+           (else (set string (entry stringValue))
+                 (if (> (string length) MAXW)
+                     (set string (+ (string substringToIndex:(- MAXW 3)) "...")))
+                 string)))
+
+(def divs-for-dictionary (dictionary)
+     (set keys ((dictionary allKeys) sort))
+     (&div style:"margin-left:10px; border:2px solid #EEE; background-color:#FFF; padding:2px"
+           (keys map:
+                 (do (key)
+                     (&div style:"word-wrap:break-word;"
+                           (&strong key) (&br)
+                           (dvalue-for-entry (dictionary objectForKey:key)))))))
+
+
+(files "/accounts/*path:" "public")
+
+(get "/*path:"
+     (authenticate)
+     (RESPONSE setStatus:404)
+     (htmlpage "Not found"
+               (topbar)
+               (&div class:"row"
+                     (&div class:"large-12 columns"
+                           (&h3 "404 Resource Not Found")
+                           (&p "You wanted: #{*path}")
+                           (&p "Sorry.")))))
+
+;(AgentHTTPServer run)
+(set s ((AgentLibEVHTPServer alloc) initWithService:(AgentHTTPService sharedService)))
+(s setVerbose:YES)
+(s run)
+

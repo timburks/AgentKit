@@ -43,26 +43,8 @@
        `(unless (set account (authenticate))
                 (return (RESPONSE redirectResponseToLocation:"/signin"))))
 
-(macro topbar ()
-       (set mongo (AgentMongoDB new))
-       (mongo connect)
-       (set barapps (mongo findArray:(dict $query:(dict) $orderby:(dict name:1))
-                        inCollection:"control.apps"))
-       (set additional-items (array (&li class:"divider")
-                                    (&li class:"has-dropdown" (&a href:"#" "system...")
-                                         (&ul class:"dropdown"
-                                              (&li (&a href:"/apps/nginx" "nginx"))
-                                              (&li class:"divider")
-                                              (&li (&a href:"/apps/mongodb" "mongodb"))))
-                                    (&li class:"divider")
-                                    (&li class:"has-dropdown" (&a href:"#" "apps...")
-                                         (&ul class:"dropdown"
-                                              (barapps map:(do (app)
-                                                               (&li (&a href:(+ "/apps/apps/manage/" (app _id:))
-                                                                        (app name:)))))
-                                              (&li class:"divider")
-                                              (&li (&a href:"/apps/apps/add" "Add an app"))))))
-       (topbar-for-app "CHIEF" additional-items))
+(macro topbar ()       
+       (topbar-for-app "APPS" nil))
 
 (get "/apps"
      (authenticate)
@@ -74,12 +56,15 @@
                (myapps each:
                        (do (app)
                            (set worker-count (+ worker-count (((app deployment:) workers:) count)))))
-               (htmlpage "Chief"
+               (htmlpage "Apps"
                          (topbar)
                          (&div class:"row"
                                (&div class:"large-12 columns"
+                                     (&h1 "Apps")
                                      (&p "Monitoring " (myapps count) " apps. "
-                                         "Running " worker-count " instances.")))
+                                         "Running " worker-count " instances. "
+                                         (&a href:"/apps/add" "Add an app.") " "
+                                         (&a href:"/apps/nginx" "Check nginx configuration."))))
                          ((myapps subarraysOfN:3) map:
                           (do (row)
                               (&div class:"row"
@@ -92,17 +77,17 @@
                                                                     (else (set link (+ "http://" (((app domains:) componentsSeparatedByString:" ") 0)))))
                                                                 (&div (&h3 (&a href:link (app name:)))
                                                                       (&p (app description:))
-                                                                      (&p (&a href:(+ "/apps/apps/manage/" (app _id:)) "Manage it.")))))))))))))
+                                                                      (&p (&a href:(+ "/apps/manage/" (app _id:)) "Manage it.")))))))))))))
          (else nil)))
 
-(get "/apps/apps/add"
+(get "/apps/add"
      (require-user)
      (htmlpage "Add an app"
                (&& (topbar)
                    (&div class:"row"
                          (&div class:"large-12 columns"
                                (&h1 "Add an app")
-                               (&form action:"/apps/apps/add/"
+                               (&form action:"/apps/add/"
                                           id:"edit" method:"post"
                                       (&dl (&dt (&label for:"app_name" "App name"))
                                            (&dd (&input id:"app_name" name:"name" size:"40" type:"text"))
@@ -154,7 +139,7 @@
      (puts "#{((responsep value) statusCode)}: #{string}")
      result)
 
-(post "/apps/apps/add"
+(post "/apps/add"
       (require-user)
       (set path "http://localhost:2010/control/apps")
       (set URL (NSURL URLWithString:path))
@@ -165,9 +150,9 @@
       (request setValue:"Basic #{auth}" forHTTPHeaderField:"Authorization")
       (set result (NSURLConnection sendSynchronousRequest:request returningResponse:(set responsep (NuReference new)) error:(set errorp (NuReference new))))
       (set appid ((NSString alloc) initWithData:result encoding:NSUTF8StringEncoding))
-      (RESPONSE redirectResponseToLocation:(+ "/apps/apps/manage/" appid)))
+      (RESPONSE redirectResponseToLocation:(+ "/apps/manage/" appid)))
 
-(get "/apps/apps/manage/appid:"
+(get "/apps/manage/appid:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
      (mongo-connect)
@@ -198,14 +183,14 @@
                                                                   (rss-date-formatter stringFromDate:(version created_at:))
                                                                   (&br)
                                                                   (version version:))
-                                                             (&td (&a href:(+ "/apps/apps/manage/delete/" appid "/" (version version:))
+                                                             (&td (&a href:(+ "/apps/manage/delete/" appid "/" (version version:))
                                                                       "Delete"))
-                                                             (&td (&a href:(+ "/apps/apps/manage/deploy/" appid "/" (version version:))
+                                                             (&td (&a href:(+ "/apps/manage/deploy/" appid "/" (version version:))
                                                                       "Deploy")))))))
                                      (else (&p "No versions have been uploaded.")))
                                  (if (app deployment:)
                                      (+
-                                       (&span style:"float:right" (&a href:(+ "/apps/apps/manage/stop/" (app _id:)) "Stop"))
+                                       (&span style:"float:right" (&a href:(+ "/apps/manage/stop/" (app _id:)) "Stop"))
                                        (&h3 "Deployment")
                                        (&table class:"table table-bordered"
                                                (&tr (&td "name") (&td ((app deployment:) name:)))
@@ -214,20 +199,20 @@
                                                 (do (worker)
                                                     (+ (&tr (&td (&strong "worker"))
                                                             (&td (worker host:) ":" (worker port:)))
-                                                       (&tr (&td) (&td (&a href:(+ "/apps/apps/manage/" appid "/" (worker container:))
+                                                       (&tr (&td) (&td (&a href:(+ "/apps/manage/" appid "/" (worker container:))
                                                                            (worker container:))))))))))
-                                 (&form action:(+ "/apps/apps/upload/" appid)
+                                 (&form action:(+ "/apps/upload/" appid)
                                         method:"post"
                                        enctype:"multipart/form-data"
                                         (&p "To upload a new version of this app:")
                                         (&input type:"file" name:"appfile" size:40)
                                         (&input type:"submit" name:"upload" value:"upload"))
                                  (&hr style:"margin-top:2em;")
-                                 (&a href:(+ "/apps/apps/edit/" appid) "Edit this app")
+                                 (&a href:(+ "/apps/edit/" appid) "Edit this app")
                                  " | "
-                                 (&a href:(+ "/apps/apps/delete/" appid) "Delete this app"))))))
+                                 (&a href:(+ "/apps/delete/" appid) "Delete this app"))))))
 
-(get "/apps/apps/manage/stop/appid:"
+(get "/apps/manage/stop/appid:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
      (mongo-connect)
@@ -244,9 +229,9 @@
      (set auth (("admin:master123" dataUsingEncoding:NSUTF8StringEncoding) agent_base64EncodedString))
      (request setValue:"Basic #{auth}" forHTTPHeaderField:"Authorization")
      (set result (NSURLConnection sendSynchronousRequest:request returningResponse:(set responsep (NuReference new)) error:(set errorp (NuReference new))))
-     (RESPONSE redirectResponseToLocation:(+ "/apps/apps/manage/" appid)))
+     (RESPONSE redirectResponseToLocation:(+ "/apps/manage/" appid)))
 
-(get "/apps/apps/manage/delete/appid:/version:"
+(get "/apps/manage/delete/appid:/version:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
      (mongo-connect)
@@ -265,9 +250,9 @@
      (mongo removeFile:version
           inCollection:"appfiles"
             inDatabase:"control")
-     (RESPONSE redirectResponseToLocation:(+ "/apps/apps/manage/" appid)))
+     (RESPONSE redirectResponseToLocation:(+ "/apps/manage/" appid)))
 
-(get "/apps/apps/manage/deploy/appid:/version:"
+(get "/apps/manage/deploy/appid:/version:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
      (mongo-connect)
@@ -284,9 +269,9 @@
      (request setValue:"Basic #{auth}" forHTTPHeaderField:"Authorization")
      (set result (NSURLConnection sendSynchronousRequest:request returningResponse:(set responsep (NuReference new)) error:(set errorp (NuReference new))))
      
-     (RESPONSE redirectResponseToLocation:(+ "/apps/apps/manage/" appid)))
+     (RESPONSE redirectResponseToLocation:(+ "/apps/manage/" appid)))
 
-(post "/apps/apps/upload/appid:"
+(post "/apps/upload/appid:"
       (puts "UPLOAD")
       (require-user)
       (set appid ((REQUEST bindings) appid:))
@@ -303,11 +288,11 @@
           (then ;; save appfile
                 (puts "saving")
                 (add-version app appfile-name appfile-data)))
-      (RESPONSE redirectResponseToLocation:(+ "/apps/apps/manage/" appid)))
+      (RESPONSE redirectResponseToLocation:(+ "/apps/manage/" appid)))
 
 ;;=== Me ===
 
-(get "/apps/apps/edit/appid:"
+(get "/apps/edit/appid:"
      (require-user)
      (mongo-connect)
      (set appid ((REQUEST bindings) appid:))
@@ -318,7 +303,7 @@
                      (&div class:"row"
                            (&div class:"large-12 columns"
                                  (&h1 "Editing " (app name:))
-                                 (&form action:(+ "/apps/apps/edit/" appid)
+                                 (&form action:(+ "/apps/edit/" appid)
                                             id:"edit" method:"post"
                                         (&dl (&dt (&label for:"app_name" "App name"))
                                              (&dd (&input id:"app_name" name:"name" size:"40" type:"text" value:(app name:)))
@@ -337,7 +322,7 @@
                                         " or "
                                         (&a href:"/apps" "Cancel")))))))
 
-(post "/apps/apps/edit/appid:"
+(post "/apps/edit/appid:"
       (require-user)
       (set appid ((REQUEST bindings) appid:))
       (mongo-connect)
@@ -354,9 +339,9 @@
             withCondition:(dict _id:(oid appid))
         insertIfNecessary:NO
     updateMultipleEntries:NO)
-      (RESPONSE redirectResponseToLocation:(+ "/apps/apps/manage/" appid)))
+      (RESPONSE redirectResponseToLocation:(+ "/apps/manage/" appid)))
 
-(get "/apps/apps/delete/appid:"
+(get "/apps/delete/appid:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
      (mongo-connect)
@@ -371,13 +356,13 @@
                                          (&tr (&td "domains" (&td (app domains:))))
                                          (&tr (&td "description" (&td (app description:)))))
                                  (&h2 "WARNING: there is no undo.")
-                                 (&form action:(+ "/apps/apps/delete/" appid)
+                                 (&form action:(+ "/apps/delete/" appid)
                                         method:"POST"
                                         (&input type:"submit" name:"submit" value:"OK")
                                         "&nbsp;"
                                         (&input type:"submit" name:"submit" value:"Cancel")))))))
 
-(post "/apps/apps/delete/appid:"
+(post "/apps/delete/appid:"
       (require-user)
       (set appid ((REQUEST bindings) appid:))
       (mongo-connect)
@@ -400,7 +385,7 @@
                                             (&h2 "It's gone.")))))))
       (else (RESPONSE redirectResponseToLocation:"/apps")))
 
-(get "/apps/apps/manage/appid:/container:"
+(get "/apps/manage/appid:/container:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
      (mongo-connect)
@@ -414,13 +399,13 @@
                          (&div (topbar)
                                (&div class:"row"
                                      (&div class:"large-12 columns"
-                                           (&h1 "Worker for " (&a href:(+ "/apps/apps/manage/" appid) (app name:)))
+                                           (&h1 "Worker for " (&a href:(+ "/apps/manage/" appid) (app name:)))
                                            (&pre (worker description))
-                                           (&ul (&li (&a href:(+ "/apps/apps/manage/" appid "/" container "/upstart.conf") "upstart.conf"))
-                                                (&li (&a href:(+ "/apps/apps/manage/" appid "/" container "/worker.log") "worker.log"))))))))
+                                           (&ul (&li (&a href:(+ "/apps/manage/" appid "/" container "/upstart.conf") "upstart.conf"))
+                                                (&li (&a href:(+ "/apps/manage/" appid "/" container "/worker.log") "worker.log"))))))))
          (else "not found")))
 
-(get "/apps/apps/manage/appid:/container:/file:"
+(get "/apps/manage/appid:/container:/file:"
      (require-user)
      (set appid ((REQUEST bindings) appid:))
      (mongo-connect)

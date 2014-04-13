@@ -1,0 +1,153 @@
+#!/usr/local/bin/nush
+(load "AgentHTTP")
+(load "AgentCrypto")
+(load "AgentMongoDB")
+(load "AgentJSON")
+(load "AgentKit")
+
+(def oid (string) ;; MongoDB helper
+     ((AgentBSONObjectID alloc) initWithString:string))
+
+(macro redirect (location)
+       `(progn (RESPONSE setStatus:303)
+               (RESPONSE setValue:,location forHTTPHeader:"Location")
+               "redirecting"))
+
+(def nonce () ((AgentUUID new) stringValue))
+
+(set PASSWORD_SALT "agent.io")
+(class NSString
+ (- (id) md5HashWithSalt:(id) salt is
+    (((self dataUsingEncoding:NSUTF8StringEncoding)
+      agent_hmacMd5DataWithKey:(salt dataUsingEncoding:NSUTF8StringEncoding))
+     agent_hexEncodedString)))
+
+(class NSNumber
+ (- map:fn is
+    (set result (array))
+    (self times:(do (i) (result addObject:(fn i))))
+    result))
+
+(macro get-user (REQUEST)
+       `(progn (set screen_name nil)
+               (set session nil)
+               (if (set token ((,REQUEST cookies) session:))
+                   (set mongo (AgentMongoDB new))
+                   (mongo connect)
+                   (set session (mongo findOne:(dict cookie:token) inCollection:"accounts.sessions"))
+                   (set screen_name (session username:)))
+               (set session (dict screen_name:(set screen_name:"testing")))
+               session))
+
+(set ADMIN "tim")
+
+(macro administrator-is-logged-in (REQUEST)
+       `(progn (unless (and (defined screen_name) screen_name)
+                       (get-user ,REQUEST))
+               (and screen_name (eq screen_name ADMIN))))
+
+(macro authenticate ()
+       '(progn (get-user REQUEST)))
+
+;;;;;
+
+(macro adduser-form (message)
+       `(progn (htmlpage "Add User"
+                         (topbar)
+                         (&div class:"row"
+                               (&div class:"medium-6 medium-centered columns"
+                                     (&form method:"post"
+                                            action:"/accounts/adduser"
+                                            (&fieldset (&legend ,message)
+                                                       (&label for:"username" "Username "
+                                                             style:"margin-right:2em"
+                                                               (&input id:"username"
+                                                                     type:"text"
+                                                                     name:"username"
+                                                                    title:"username"
+                                                                    width:20))
+                                                       (&label for:"password" "Password "
+                                                             style:"margin-right:2em"
+                                                               (&input id:"password"
+                                                                     type:"password"
+                                                                     name:"password"
+                                                                    title:"password"
+                                                                    width:20))
+                                                       (&label for:"password2" "Password (again) "
+                                                             style:"margin-right:2em"
+                                                               (&input id:"password2"
+                                                                     type:"password"
+                                                                     name:"password2"
+                                                                    title:"password"
+                                                                    width:20))
+                                                       (&button class:"button tiny"
+                                                                 type:"submit"
+                                                                "&nbsp;Add user&nbsp;"))))))))
+
+
+
+(def escape (string)
+     (set string (string stringByReplacingOccurrencesOfString:"&" withString:"&amp;"))
+     (set string (string stringByReplacingOccurrencesOfString:"<" withString:"&lt;"))
+     (set string (string stringByReplacingOccurrencesOfString:">" withString:"&gt;"))
+     (set string (string stringByReplacingOccurrencesOfString:"\"" withString:"&quot;"))
+     string)
+
+(def js-delete (path)
+     (+ "$.ajax({url:'" path "',type:'DELETE',success:function(response) {location.reload(true);}}); return false;"))
+
+(def js-post (path arguments)
+     (set command (+ "var form = document.createElement('form');"
+                     "form.setAttribute('method', 'POST');"
+                     "form.setAttribute('action', '" path "');"))
+     (arguments each:
+                (do (key value)
+                    (command appendString:(+ "var field = document.createElement('input');"
+                                             "field.setAttribute('name', '" key "');"
+                                             "field.setAttribute('value', '" value "');"
+                                             "form.appendChild(field);"))))
+     (command appendString:"form.submit();")
+     (command appendString:"return false;")
+     command)
+
+(macro topbar-empty ()
+       (&div class:"contain-to-grid" style:"margin-bottom:20px;"
+             (&nav class:"top-bar" data-topbar:1)))
+
+(macro topbar ()
+       (set additional-items nil)
+       (topbar-for-app "Messages" additional-items))
+
+(get "/messages"
+     (authenticate)
+     (set mongo (AgentMongoDB new))
+     (mongo connect)
+          
+     (if screen_name
+         (then (htmlpage "Agent Messages"
+                         (topbar)
+                         (&div class:"row"
+                               (&div class:"medium-8 small-12 columns"
+                                     (&div (&h1 "Messages")
+                                           
+                                           )))))
+         (else (redirect "/signin"))))
+
+(files "/accounts/*path:" "public")
+
+(get "/*path:"
+     (authenticate)
+     (RESPONSE setStatus:404)
+     (htmlpage "Not found"
+               (topbar)
+               (&div class:"row"
+                     (&div class:"large-12 columns"
+                           (&h3 "404 Resource Not Found")
+                           (&p "You wanted: #{*path}")
+                           (&p "Sorry.")))))
+
+;(AgentHTTPServer run)
+(set s ((AgentLibEVHTPServer alloc) initWithService:(AgentHTTPService sharedService)))
+(s setVerbose:YES)
+(s run)
+
