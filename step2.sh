@@ -27,3 +27,6 @@ cd /home/control/control
 #sudo nush tools/setup.nu
 #sudo /usr/sbin/nginx 
 cd ..
+
+# not sure how this gets installed, but we don't need to keep it
+sudo apt-get uninstall whoopsie

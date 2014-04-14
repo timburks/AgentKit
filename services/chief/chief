@@ -1,0 +1,196 @@
+#!/usr/local/bin/nush
+(load "AgentHTTP")
+(load "AgentCrypto")
+(load "AgentMongoDB")
+(load "AgentKit")
+(load "digitalocean")
+
+(set ClientID "SVa8bfo8arLnPHithQytU")
+(set APIKey "332c46e20057829bdc03cbaa601c5214")
+
+(function run (command)
+          (puts (command description))
+          (set result (NSURLConnection sendSynchronousRequest:command returningResponse:(set responsep (NuReference new)) error:(set errorp (NuReference new))))
+          (result agent_JSONValue))
+
+(set MAXW 40)
+(def dvalue-for-entry (entry)
+     (cond ((entry isKindOfClass:NSDictionary)
+            (divs-for-dictionary entry))
+           ((entry isKindOfClass:NSDate)
+            (entry description))
+           ((entry isKindOfClass:NSArray)
+            ((entry map:(do (item) (divs-for-dictionary item))) componentsJoinedByString:""))
+           (else (set string (entry stringValue))
+                 (if (> (string length) MAXW)
+                     (set string (+ (string substringToIndex:(- MAXW 3)) "...")))
+                 string)))
+
+(def divs-for-dictionary (dictionary)
+     (cond ((dictionary isKindOfClass:NSDictionary)
+            (set keys ((dictionary allKeys) sort))
+            (&div style:"margin-left:10px; border:2px solid #EEE; background-color:#FFF; padding:2px"
+                  (keys map:
+                        (do (key)
+                            (&div style:"word-wrap:break-word;"
+                                  (&strong key) (&br)
+                                  (dvalue-for-entry (dictionary objectForKey:key)))))))
+           (else (dictionary description))
+           ))
+
+(get "/chief"
+     (authenticate)
+     (if screen_name
+         (then
+              (set ocean (DigitalOcean new))
+              (ocean setClientID:ClientID)
+              (ocean setApiKey:APIKey)
+              (set response (run (ocean getDroplets)))
+              
+              (htmlpage "Chief"
+                        (topbar-for-app "Chief" nil)
+                        (&div class:"row"
+                              (&div class:"small-12 columns"
+                                    (&h1 "Hello, Chief!")
+                                    (&p (&a href:"/chief/ocean" "Digital Ocean"))
+                                    (if (set droplets (response droplets:))
+                                        (&ul (droplets map:
+                                                       (do (droplet)
+                                                           (&li (&a href:(+ "/chief/droplet/" (droplet id:)) (droplet name:)))))))
+                                    (&hr)
+                                    ))))
+         (else (redirect "/signin"))))
+
+
+(get "/chief/ocean"
+     (authenticate)
+     (if screen_name
+         (then (htmlpage "Chief"
+                         (topbar-for-app "Chief" nil)
+                         (&div class:"row"
+                               (&div class:"small-12 columns"
+                                     (&h3 "Digital Ocean")
+                                     (&ul (&li (&a href:"/chief/ocean/droplets" "droplets"))
+                                          (&li (&a href:"/chief/ocean/domains" "domains"))
+                                          (&li (&a href:"/chief/ocean/regions" "regions"))
+                                          (&li (&a href:"/chief/ocean/images" "images"))
+                                          (&li (&a href:"/chief/ocean/sshKeys" "sshKeys"))
+                                          (&li (&a href:"/chief/ocean/sizes" "sizes")))))))
+         (else (redirect "/signin"))))
+
+(get "/chief/ocean/droplets"
+     (authenticate)
+     (if screen_name
+         (then (set ocean (DigitalOcean new))
+               (ocean setClientID:ClientID)
+               (ocean setApiKey:APIKey)
+               (set droplets (run (ocean getDroplets)))
+               (htmlpage "Chief"
+                         (topbar-for-app "Chief" nil)
+                         (&div class:"row"
+                               (&div class:"small-12 columns"
+                                     (&h4 "droplets")
+                                     (divs-for-dictionary droplets)))))
+         (else (redirect "/signin"))))
+
+(get "/chief/ocean/domains"
+     (authenticate)
+     (if screen_name
+         (then (set ocean (DigitalOcean new))
+               (ocean setClientID:ClientID)
+               (ocean setApiKey:APIKey)
+               (set domains (run (ocean getDomains)))
+               (htmlpage "Chief"
+                         (topbar-for-app "Chief" nil)
+                         (&div class:"row"
+                               (&div class:"small-12 columns"
+                                     (&h4 "domains")
+                                     (divs-for-dictionary domains)))))
+         (else (redirect "/signin"))))
+
+(get "/chief/ocean/regions"
+     (authenticate)
+     (if screen_name
+         (then (set ocean (DigitalOcean new))
+               (ocean setClientID:ClientID)
+               (ocean setApiKey:APIKey)
+               (set regions (run (ocean getRegions)))
+               (htmlpage "Chief"
+                         (topbar-for-app "Chief" nil)
+                         (&div class:"row"
+                               (&div class:"small-12 columns"
+                                     (&h4 "regions")
+                                     (divs-for-dictionary regions)))))
+         (else (redirect "/signin"))))
+
+(get "/chief/ocean/images"
+     (authenticate)
+     (if screen_name
+         (then (set ocean (DigitalOcean new))
+               (ocean setClientID:ClientID)
+               (ocean setApiKey:APIKey)
+               (set images (run (ocean getImages)))
+               (htmlpage "Chief"
+                         (topbar-for-app "Chief" nil)
+                         (&div class:"row"
+                               (&div class:"small-12 columns"
+                                     (&h4 "images")
+                                     (divs-for-dictionary images)))))
+         (else (redirect "/signin"))))
+
+(get "/chief/ocean/sshKeys"
+     (authenticate)
+     (if screen_name
+         (then (set ocean (DigitalOcean new))
+               (ocean setClientID:ClientID)
+               (ocean setApiKey:APIKey)
+               (set sshKeys (run (ocean getSSHKeys)))
+               (htmlpage "Chief"
+                         (topbar-for-app "Chief" nil)
+                         (&div class:"row"
+                               (&div class:"small-12 columns"
+                                     (&h4 "sshKeys")
+                                     (divs-for-dictionary sshKeys)))))
+         (else (redirect "/signin"))))
+
+(get "/chief/ocean/sizes"
+     (authenticate)
+     (if screen_name
+         (then (set ocean (DigitalOcean new))
+               (ocean setClientID:ClientID)
+               (ocean setApiKey:APIKey)
+               (set sizes (run (ocean getSizes)))
+               (htmlpage "Chief"
+                         (topbar-for-app "Chief" nil)
+                         (&div class:"row"
+                               (&div class:"small-12 columns"
+                                     (&h4 "sizes")
+                                     (divs-for-dictionary sizes)))))
+         (else (redirect "/signin"))))
+
+
+(get "/chief/droplet/dropletid:"
+     (authenticate)
+     (if screen_name
+         (then (set ocean (DigitalOcean new))
+               (ocean setClientID:ClientID)
+               (ocean setApiKey:APIKey)
+               (set response (run (ocean getDropletWithID:dropletid)))
+               (htmlpage "Chief"
+                         (topbar-for-app "Chief" nil)
+                         (&div class:"row"
+                               (&div class:"small-12 columns"
+                                     (&h1 "Droplet details")
+                                     (if (set droplet (response droplet:))
+                                         
+                                         (&div class:"panel"
+                                               (&h3 (droplet name:))
+                                               
+                                               ))
+                                     
+                                     (&hr)
+                                     (divs-for-dictionary response)
+                                     (&hr)))))
+         (else (redirect "/signin"))))
+
+(AgentHTTPServer run)

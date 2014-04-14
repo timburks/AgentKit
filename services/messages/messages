@@ -13,106 +13,36 @@
                (RESPONSE setValue:,location forHTTPHeader:"Location")
                "redirecting"))
 
-(def nonce () ((AgentUUID new) stringValue))
+(macro mongo-connect ()
+       `(progn (unless (defined mongo)
+                       (set mongo (AgentMongoDB new))
+                       (mongo connect))))
 
-(set PASSWORD_SALT "agent.io")
-(class NSString
- (- (id) md5HashWithSalt:(id) salt is
-    (((self dataUsingEncoding:NSUTF8StringEncoding)
-      agent_hmacMd5DataWithKey:(salt dataUsingEncoding:NSUTF8StringEncoding))
-     agent_hexEncodedString)))
-
-(class NSNumber
- (- map:fn is
-    (set result (array))
-    (self times:(do (i) (result addObject:(fn i))))
-    result))
-
-(macro get-user (REQUEST)
-       `(progn (set screen_name nil)
-               (set session nil)
-               (if (set token ((,REQUEST cookies) session:))
-                   (set mongo (AgentMongoDB new))
-                   (mongo connect)
-                   (set session (mongo findOne:(dict cookie:token) inCollection:"accounts.sessions"))
-                   (set screen_name (session username:)))
-               (set session (dict screen_name:(set screen_name:"testing")))
-               session))
-
-(set ADMIN "tim")
-
-(macro administrator-is-logged-in (REQUEST)
-       `(progn (unless (and (defined screen_name) screen_name)
-                       (get-user ,REQUEST))
-               (and screen_name (eq screen_name ADMIN))))
-
-(macro authenticate ()
-       '(progn (get-user REQUEST)))
-
-;;;;;
-
-(macro adduser-form (message)
-       `(progn (htmlpage "Add User"
-                         (topbar)
-                         (&div class:"row"
-                               (&div class:"medium-6 medium-centered columns"
-                                     (&form method:"post"
-                                            action:"/accounts/adduser"
-                                            (&fieldset (&legend ,message)
-                                                       (&label for:"username" "Username "
-                                                             style:"margin-right:2em"
-                                                               (&input id:"username"
-                                                                     type:"text"
-                                                                     name:"username"
-                                                                    title:"username"
-                                                                    width:20))
-                                                       (&label for:"password" "Password "
-                                                             style:"margin-right:2em"
-                                                               (&input id:"password"
-                                                                     type:"password"
-                                                                     name:"password"
-                                                                    title:"password"
-                                                                    width:20))
-                                                       (&label for:"password2" "Password (again) "
-                                                             style:"margin-right:2em"
-                                                               (&input id:"password2"
-                                                                     type:"password"
-                                                                     name:"password2"
-                                                                    title:"password"
-                                                                    width:20))
-                                                       (&button class:"button tiny"
-                                                                 type:"submit"
-                                                                "&nbsp;Add user&nbsp;"))))))))
-
-
-
-(def escape (string)
-     (set string (string stringByReplacingOccurrencesOfString:"&" withString:"&amp;"))
-     (set string (string stringByReplacingOccurrencesOfString:"<" withString:"&lt;"))
-     (set string (string stringByReplacingOccurrencesOfString:">" withString:"&gt;"))
-     (set string (string stringByReplacingOccurrencesOfString:"\"" withString:"&quot;"))
-     string)
-
-(def js-delete (path)
-     (+ "$.ajax({url:'" path "',type:'DELETE',success:function(response) {location.reload(true);}}); return false;"))
-
-(def js-post (path arguments)
-     (set command (+ "var form = document.createElement('form');"
-                     "form.setAttribute('method', 'POST');"
-                     "form.setAttribute('action', '" path "');"))
-     (arguments each:
-                (do (key value)
-                    (command appendString:(+ "var field = document.createElement('input');"
-                                             "field.setAttribute('name', '" key "');"
-                                             "field.setAttribute('value', '" value "');"
-                                             "form.appendChild(field);"))))
-     (command appendString:"form.submit();")
-     (command appendString:"return false;")
-     command)
-
-(macro topbar-empty ()
-       (&div class:"contain-to-grid" style:"margin-bottom:20px;"
-             (&nav class:"top-bar" data-topbar:1)))
+;; this macro wraps api handlers and generates formatted responses from the results.
+(macro auth (*body) ;; the body should return a (dict)
+       `(progn (RESPONSE setValue:"application/xml" forHTTPHeader:"Content-Type")
+               (set authorization ((REQUEST headers) Authorization:))
+               (set parts (authorization componentsSeparatedByString:" "))
+               (case ((parts 0) lowercaseString)
+                     ("basic" (set credentials (NSString stringWithData:(NSData agent_dataWithBase64EncodedString:(parts 1))
+                                                               encoding:NSUTF8StringEncoding))
+                              (set parts (credentials componentsSeparatedByString:":"))
+                              (set username (parts 0))
+                              (set password (parts 1))
+                              (mongo-connect)
+                              (set account (mongo findOne:(dict username:username
+                                                                password:(password agent_md5HashWithSalt:PASSWORD_SALT))
+                                             inCollection:"accounts.users")))
+                     ("bearer" (set secret (parts 1))
+                               (mongo-connect)
+                               (set account (mongo findOne:(dict secret:secret)
+                                              inCollection:"accounts.users")))
+                     (else (set account nil)))
+               (if account
+                   (then (set response (progn ,@*body)))
+                   (else (RESPONSE setStatus:401)
+                         (set response (dict message:"Unauthorized"))))
+               (response XMLPropertyListRepresentation)))
 
 (macro topbar ()
        (set additional-items nil)
@@ -122,16 +52,29 @@
      (authenticate)
      (set mongo (AgentMongoDB new))
      (mongo connect)
-          
      (if screen_name
-         (then (htmlpage "Agent Messages"
+         (then (set messages (mongo findArray:(dict $query:(dict) $orderby:(dict created:-1)) inCollection:"messages.messages"))
+               (htmlpage "Agent Messages"
                          (topbar)
                          (&div class:"row"
                                (&div class:"medium-8 small-12 columns"
                                      (&div (&h1 "Messages")
-                                           
-                                           )))))
+                                           (messages map:(do (message)
+                                                             (&table style:"width:100%"
+                                                                     (&tr (&td "From: ") (&td (message sender:)))
+                                                                     (&tr (&td "To: ") (&td ((message message:) to:)))
+                                                                     (&tr (&td "Date: ") (&td ((message created:) description)))
+                                                                     (&tr (&td "Subject: ") (&td (&strong ((message message:) subject:))))
+                                                                     (&tr (&td) (&td ((message message:) body:)))))))))))
          (else (redirect "/signin"))))
+
+(post "/messages/inbox"
+      (auth (mongo-connect)
+            (set sender (account username:))
+            (set message ((REQUEST body) propertyListValue))
+            (mongo insertObject:(dict message:message sender:sender created:(NSDate date))
+                 intoCollection:"messages.messages")
+            (dict message:"ok")))
 
 (files "/accounts/*path:" "public")
 

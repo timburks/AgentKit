@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		2203867F18D6BB330091A43B /* AgentLibEVHTPServer.m in Sources */ = {isa = PBXBuildFile; fileRef = 2203867E18D6BB330091A43B /* AgentLibEVHTPServer.m */; };
+		2241746118FB9AB60088CC54 /* AgentHTTPClient.m in Sources */ = {isa = PBXBuildFile; fileRef = 2241746018FB9AB60088CC54 /* AgentHTTPClient.m */; };
+		2241746418FB9ADC0088CC54 /* AgentHTTPResult.m in Sources */ = {isa = PBXBuildFile; fileRef = 2241746318FB9ADC0088CC54 /* AgentHTTPResult.m */; };
 		22B5502D18F2650B00A13F28 /* Nu.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 22B5502C18F2650B00A13F28 /* Nu.framework */; };
 		22B5503018F26ADF00A13F28 /* AgentHTTPCookie.m in Sources */ = {isa = PBXBuildFile; fileRef = 22B5502F18F26ADF00A13F28 /* AgentHTTPCookie.m */; };
 		22E9FD351745F55500FE9B01 /* AgentHTTPService.m in Sources */ = {isa = PBXBuildFile; fileRef = 22E9FD341745F55500FE9B01 /* AgentHTTPService.m */; };
@@ -40,6 +42,10 @@
 /* Begin PBXFileReference section */
 		2203867D18D6BB330091A43B /* AgentLibEVHTPServer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = AgentLibEVHTPServer.h; sourceTree = "<group>"; };
 		2203867E18D6BB330091A43B /* AgentLibEVHTPServer.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = AgentLibEVHTPServer.m; sourceTree = "<group>"; };
+		2241745F18FB9AB60088CC54 /* AgentHTTPClient.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = AgentHTTPClient.h; sourceTree = "<group>"; };
+		2241746018FB9AB60088CC54 /* AgentHTTPClient.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = AgentHTTPClient.m; sourceTree = "<group>"; };
+		2241746218FB9ADC0088CC54 /* AgentHTTPResult.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = AgentHTTPResult.h; sourceTree = "<group>"; };
+		2241746318FB9ADC0088CC54 /* AgentHTTPResult.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = AgentHTTPResult.m; sourceTree = "<group>"; };
 		22B5502C18F2650B00A13F28 /* Nu.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Nu.framework; path = ../../../../../../Library/Frameworks/Nu.framework; sourceTree = "<group>"; };
 		22B5502E18F26ADF00A13F28 /* AgentHTTPCookie.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = AgentHTTPCookie.h; sourceTree = "<group>"; };
 		22B5502F18F26ADF00A13F28 /* AgentHTTPCookie.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = AgentHTTPCookie.m; sourceTree = "<group>"; };
@@ -147,6 +153,10 @@
 				22FF924E1745939E00ADC59E /* AgentLibEventHTTPServer.m */,
 				2203867D18D6BB330091A43B /* AgentLibEVHTPServer.h */,
 				2203867E18D6BB330091A43B /* AgentLibEVHTPServer.m */,
+				2241745F18FB9AB60088CC54 /* AgentHTTPClient.h */,
+				2241746018FB9AB60088CC54 /* AgentHTTPClient.m */,
+				2241746218FB9ADC0088CC54 /* AgentHTTPResult.h */,
+				2241746318FB9ADC0088CC54 /* AgentHTTPResult.m */,
 			);
 			path = objc;
 			sourceTree = SOURCE_ROOT;
@@ -214,12 +224,14 @@
 				22FF92511745939E00ADC59E /* AgentHTTPHelpers.m in Sources */,
 				2203867F18D6BB330091A43B /* AgentLibEVHTPServer.m in Sources */,
 				22FF92521745939E00ADC59E /* AgentHTTPRequest.m in Sources */,
+				2241746418FB9ADC0088CC54 /* AgentHTTPResult.m in Sources */,
 				22FF92531745939E00ADC59E /* AgentHTTPRequestHandler.m in Sources */,
 				22FF92541745939E00ADC59E /* AgentHTTPRequestRouter.m in Sources */,
 				22FF92551745939E00ADC59E /* AgentHTTPResponse.m in Sources */,
 				22FF92561745939E00ADC59E /* AgentHTTPServer.m in Sources */,
 				22FF92571745939E00ADC59E /* AgentLibEventHTTPServer.m in Sources */,
 				22B5503018F26ADF00A13F28 /* AgentHTTPCookie.m in Sources */,
+				2241746118FB9AB60088CC54 /* AgentHTTPClient.m in Sources */,
 				22FF925A174593B000ADC59E /* main.m in Sources */,
 				22E9FD351745F55500FE9B01 /* AgentHTTPService.m in Sources */,
 			);

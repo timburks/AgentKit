@@ -100,7 +100,7 @@
      (authenticate)
      (set mongo (AgentMongoDB new))
      (mongo connect)
-     (set count (mongo countWithCondition:nil inCollection:"users" inDatabase:"accountsH"))
+     (set count (mongo countWithCondition:nil inCollection:"users" inDatabase:"accounts"))
      (if (or (eq count 0)
              screen_name)
          (then (set message "Add a new user.")
@@ -111,7 +111,7 @@
       (authenticate)
       (set mongo (AgentMongoDB new))
       (mongo connect)
-      (set count (mongo countWithCondition:nil inCollection:"users" inDatabase:"accountsH"))
+      (set count (mongo countWithCondition:nil inCollection:"users" inDatabase:"accounts"))
       
       (if (or (eq count 0)
               screen_name)
@@ -579,6 +579,37 @@
                                                                    class:"content"
                                                                       (divs-for-dictionary connection))))))))))
          
+         (else (redirect "/signin"))))
+
+(get "/accounts/users/userid:"
+     (authenticate)
+     (if screen_name
+         (then (set mongo (AgentMongoDB new))
+               (mongo connect)
+               (set user (mongo findOne:(dict username:userid) inCollection:"accounts.users"))
+               (user removeObjectForKey:"password")
+               (user removeObjectForKey:"secret")
+               (htmlpage "Agent Users"
+                         (topbar)
+                         (&div class:"row"
+                               (&div class:"small-12 columns"
+                                     (&h1 (user username:))
+                                     (table-for-dictionary user)))))
+         (else (redirect "/signin"))))
+
+
+(get "/accounts/connections/connectionid:"
+     (authenticate)
+     (if screen_name
+         (then (set mongo (AgentMongoDB new))
+               (mongo connect)
+               (set connection (mongo findOne:(dict _id:(oid connectionid)) inCollection:"accounts.connections"))
+               (htmlpage "Agent Connections"
+                         (topbar)
+                         (&div class:"row"
+                               (&div class:"small-12 columns"
+                                     (&h1 (connection provider:))
+                                     (table-for-dictionary connection)))))
          (else (redirect "/signin"))))
 
 (get "/accounts/services"

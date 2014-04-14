@@ -43,8 +43,27 @@
        `(unless (set account (authenticate))
                 (return (RESPONSE redirectResponseToLocation:"/signin"))))
 
-(macro topbar ()       
+(macro topbar ()
        (topbar-for-app "APPS" nil))
+
+(def table-for-apps (apps)
+     (&table style:"width:100%"
+             (&tbody
+                    (apps map:
+                          (do (app)
+                              (&tr
+                                  (&td (&strong (if (and (app path:) ((app path:) length))
+                                                    (then (&a href:(+ "/" (app path:))
+                                                              (app name:)))
+                                                    (else (&a href:(+ "http://"
+                                                                      (((app domains:) componentsSeparatedByString:" ") objectAtIndex:0))
+                                                              (app name:)))))
+                                       (&span style:"float:right"
+                                              (if (app deployment:)
+                                                  (then (&span style:"color:green;" "\u2B24"))
+                                                  (else (&span style:"color:red;" "\u2B24")))
+                                              "&nbsp;"
+                                              (&a href:(+ "/apps/manage/" (app _id:)) (&em "manage it"))))))))))
 
 (get "/apps"
      (authenticate)
@@ -56,6 +75,10 @@
                (myapps each:
                        (do (app)
                            (set worker-count (+ worker-count (((app deployment:) workers:) count)))))
+               (set systemapps (NSSet setWithArray:(array "accounts" "apps" "collections" "devices" "files" "grid" "hq" "messages" "signin")))
+               (set apps-system (myapps select:(do (app) (systemapps containsObject:(app name:)))))
+               (set apps-user   (myapps select:(do (app) (not (systemapps containsObject:(app name:))))))
+               
                (htmlpage "Apps"
                          (topbar)
                          (&div class:"row"
@@ -65,19 +88,14 @@
                                          "Running " worker-count " instances. "
                                          (&a href:"/apps/add" "Add an app.") " "
                                          (&a href:"/apps/nginx" "Check nginx configuration."))))
-                         ((myapps subarraysOfN:3) map:
-                          (do (row)
-                              (&div class:"row"
-                                    (row map:
-                                         (do (app)
-                                             (&div class:"large-4 columns end"
-                                                   (&div class:"panel" style:"margin:5px"
-                                                         (progn (if (and (app path:) ((app path:) length))
-                                                                    (then (set link (+ "/" (app path:))))
-                                                                    (else (set link (+ "http://" (((app domains:) componentsSeparatedByString:" ") 0)))))
-                                                                (&div (&h3 (&a href:link (app name:)))
-                                                                      (&p (app description:))
-                                                                      (&p (&a href:(+ "/apps/manage/" (app _id:)) "Manage it.")))))))))))))
+                         (&div class:"row"
+                               (&div class:"medium-6 columns"
+                                     (&h3 "System apps")
+                                     (table-for-apps apps-system))
+                               (&div class:"medium-6 columns"
+                                     (&h3 "Installed apps")
+                                     (table-for-apps apps-user))
+                               )))
          (else nil)))
 
 (get "/apps/add"
