@@ -55,6 +55,7 @@
                                           (dict name:"COLLECTIONS" path:"/collections")
                                           (dict name:"DEVICES" path:"/devices")
                                           (dict name:"FILES" path:"/files")
+                                          (dict name:"MAIL" path:"/mail")
                                           (dict name:"MESSAGES" path:"/messages")))
                
                (set current-app (available-apps find:(do (app) (eq (app name:) ,appname))))
