@@ -76,6 +76,22 @@
     }
 }
 
++ (void) runVerbosely
+{
+    AgentHTTPServer *server;
+    if ([self isEqual:[AgentHTTPServer class]]) {
+#ifdef DARWIN
+        server = [[AgentCocoaHTTPServer alloc] init];
+#else
+        server = [[AgentLibEVHTPServer alloc] init];
+#endif
+    } else {
+        server = [[self alloc] init];
+    }
+    [server setVerbose:YES];
+    [server run];
+}
+
 - (void) addEventWithOperation:(NSOperation *) operation
 {
 	

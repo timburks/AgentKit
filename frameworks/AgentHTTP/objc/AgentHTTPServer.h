@@ -22,6 +22,7 @@
 - (id)initWithService:(AgentHTTPService *) service;
 - (void) start;
 - (void) run;
+- (void) runVerbosely;
 - (void) addEventWithOperation:(NSOperation *) operation;
 
 @end
