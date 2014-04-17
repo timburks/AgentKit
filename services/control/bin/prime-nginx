@@ -1,0 +1,3 @@
+#!/usr/local/bin/nush
+
+(load "/home/control/lib/control-nginx")

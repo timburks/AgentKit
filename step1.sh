@@ -111,6 +111,8 @@ cd ../AgentCrypto
 nuke install
 cd ../AgentMongoDB
 nuke install
+cd ../AgentKit
+nuke install
 cd ../..
 
 
