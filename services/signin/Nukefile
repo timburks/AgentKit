@@ -6,5 +6,5 @@
             domains:""
         description:"Agent signin service."))
 
-(set AGENT "https://alpha.agent.io")
+(set AGENT "http://alpha.agent.io")
 (set CREDENTIALS "admin:master123")

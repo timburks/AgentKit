@@ -50,20 +50,17 @@
      command)
 
 (macro topbar-for-app (appname additional-items)
-       `(progn (set available-apps (array (dict name:"ACCOUNTS" path:"/accounts")
-                                          (dict name:"APPS" path:"/apps")
-                                          (dict name:"COLLECTIONS" path:"/collections")
-                                          (dict name:"DEVICES" path:"/devices")
-                                          (dict name:"FILES" path:"/files")
-                                          (dict name:"MAIL" path:"/mail")
-                                          (dict name:"MESSAGES" path:"/messages")))
+       `(progn (set mongo (AgentMongoDB new))
+               (mongo connect)
+	       (set system-apps (mongo findArray:(dict system:1 inCollection:"control.apps")))
+               (set available-apps (system-apps map:
+                                      (do (app) (dict name:(app name:) path:(+ "/" (app path:))))))
+               (set available-apps (available-apps sort))
                
                (set current-app (available-apps find:(do (app) (eq (app name:) ,appname))))
                
                (unless (defined screen_name) (set screen_name nil))
                (unless (defined searchtext) (set searchtext ""))
-               (set mongo (AgentMongoDB new))
-               (mongo connect)
                (set account_services (mongo findArray:(dict $query:(dict) $orderby:(dict vendor:1))
                                          inCollection:"accounts.services"))
                (&div class:"contain-to-grid" style:"margin-bottom:20px;"
@@ -71,7 +68,7 @@
                            (&ul class:"title-area"
                                 (&li class:"divider")
                                 (&li class:"name"
-                                     (&h1 (&a href:"/hq" "alpha")))
+                                     (&h1 (&a href:"/home" "alpha")))
                                 (&li class:"divider")
                                 (&li class:"toggle-topbar menu-icon" (&a href:"#" "Menu")))
                            (&section class:"top-bar-section"

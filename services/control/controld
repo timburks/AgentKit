@@ -633,12 +633,6 @@ END)))))
 ;; host configuration
 ;;
 
-;; create admin user
-(post "/control/admin"
-    ;; this only works if there is no admin user 
-
-)
-
 ;; set the hostname
 (post "/control/hostname"
       (auth (set hostname ((REQUEST post) hostname:))

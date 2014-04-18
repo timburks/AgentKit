@@ -29,14 +29,14 @@
                                               (&a href:(+ "/apps/manage/" (app _id:)) (&em "manage it"))))))))))
 
 
-(get "/hq"
+(get "/home"
      (authenticate)
      (set mongo (AgentMongoDB new))
      (mongo connect)
      
      (set apps (mongo findArray:(dict $query:(dict) $orderby:(dict name:1)) inCollection:"control.apps"))
      
-     (set systemapps (NSSet setWithArray:(array "accounts" "apps" "collections" "devices" "files" "grid" "hq" "messages" "signin")))
+     (set systemapps (NSSet setWithArray:(array "accounts" "apps" "collections" "devices" "files" "grid" "home" "messages" "signin")))
      (set apps-system (apps select:(do (app) (systemapps containsObject:(app name:)))))
      (set apps-user   (apps select:(do (app) (not (systemapps containsObject:(app name:))))))
      
@@ -105,7 +105,7 @@
                    who:"who"
                 whoami:"whoami"))
 
-(get "/hq/system"
+(get "/home/system"
      (authenticate)
      (if screen_name
          (then
@@ -115,13 +115,13 @@
                               (&div class:"small-12 columns"
                                     (&ul class:"inline-list"
                                          (((commands allKeys) sort) map:(do (command)
-                                                                            (&li (&a href:(+ "/hq/system/" command) (commands command))))))
+                                                                            (&li (&a href:(+ "/home/system/" command) (commands command))))))
                                     (&hr)
                                     ))))
          (else (redirect "/signin"))))
 
 
-(get "/hq/system/commandid:"
+(get "/home/system/commandid:"
      (authenticate)
      (if screen_name
          (then
@@ -134,7 +134,7 @@
                               (&div class:"small-12 columns"
                                     (&ul class:"inline-list"
                                          (((commands allKeys) sort) map:(do (command)
-                                                                            (&li (&a href:(+ "/hq/system/" command) (commands command))))))
+                                                                            (&li (&a href:(+ "/home/system/" command) (commands command))))))
                                     (&hr)
                                     (&h1 (commands commandid))
                                     (&hr)

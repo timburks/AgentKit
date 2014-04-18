@@ -155,4 +155,5 @@ END)))))
     ((self nginxConfigurationWithApps:(array)) writeToFile:(self pathForNginxConf) atomically:YES)
     ;; control redirect
     ((&a href:(+ "/control") "OK, Continue")
-     writeToFile:"#{CONTROL_PATH}/public/restart.html" atomically:NO)))
+     writeToFile:"#{CONTROL_PATH}/public/restart.html" atomically:NO)
+    (system "#{(self pathForNginx)} -c #{(self pathForNginxConf)} -p #{CONTROL_PATH}/nginx/")))
