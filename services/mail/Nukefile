@@ -1,11 +1,11 @@
 (load "AgentKit:tasks")
 
-(set APP (dict name:"accounts"
-               path:"accounts"
-	     system:1
+(set APP (dict name:"mail"
+               path:"mail"
+             system:1
             workers:1
             domains:""
-        description:"Agent account manager."))
+        description:"Agent mail account manager."))
 
 (set AGENT "https://alpha.agent.io")
 (set CREDENTIALS "admin:master123")

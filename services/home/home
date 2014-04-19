@@ -36,9 +36,8 @@
      
      (set apps (mongo findArray:(dict $query:(dict) $orderby:(dict name:1)) inCollection:"control.apps"))
      
-     (set systemapps (NSSet setWithArray:(array "accounts" "apps" "collections" "devices" "files" "grid" "home" "messages" "signin")))
-     (set apps-system (apps select:(do (app) (systemapps containsObject:(app name:)))))
-     (set apps-user   (apps select:(do (app) (not (systemapps containsObject:(app name:))))))
+     (set apps-system (apps select:(do (app) (app system:))))
+     (set apps-user   (apps select:(do (app) (not (app system:)))))
      
      
      
@@ -55,12 +54,12 @@
      (set users (mongo findArray:nil inCollection:"accounts.users"))
      
      (if screen_name
-         (then (htmlpage "Agent HQ"
+         (then (htmlpage "Agent"
                          (topbar)
                          (&div class:"row"
                                (&div class:"medium-3 small-12 columns"
                                      (&img src:"/img/agentio-512.png")
-                                     (&h2 style:"text-align:center" "Agent HQ")
+                                     (&h2 style:"text-align:center" "Agent")
                                      (&div class:"panel"
                                            (&h3 (&a href:"/accounts" "users"))
                                            (&ul (users map:

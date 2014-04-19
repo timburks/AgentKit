@@ -465,15 +465,17 @@ END)))))
                (set authorization ((REQUEST headers) Authorization:))
                (set parts (authorization componentsSeparatedByString:" "))
                (case ((parts 0) lowercaseString)
-                     ("basic" (set credentials (NSString stringWithData:(NSData agent_dataWithBase64EncodedString:(parts 1))
-                                                               encoding:NSUTF8StringEncoding))
+                     ("basic" (set credentials
+                                   (NSString stringWithData:(NSData agent_dataWithBase64EncodedString:(parts 1))
+                                                   encoding:NSUTF8StringEncoding))
                               (set parts (credentials componentsSeparatedByString:":"))
                               (set username (parts 0))
                               (set password (parts 1))
                               (mongo-connect)
-                              (set account (mongo findOne:(dict username:username
-                                                                password:(password agent_md5HashWithSalt:PASSWORD_SALT))
-                                             inCollection:"accounts.users")))
+                              (set account
+                                   (mongo findOne:(dict username:username
+                                                        password:(password agent_md5HashWithSalt:PASSWORD_SALT))
+                                     inCollection:"accounts.users")))
                      ("bearer" (set secret (parts 1))
                                (mongo-connect)
                                (set account (mongo findOne:(dict secret:secret)
@@ -493,25 +495,11 @@ END)))))
            (account removeObjectForKey:"_id")
            (dict message:"OK" account:account)))
 
-;; create a user if none exists
-(post "/control/admin"
-      (auth (mongo-connect)
-            (set admin ((REQUEST body) propertyListValue))
-            (if (mongo countWithCondition:(dict) inCollection:"users" inDatabase:"accounts")
-                (then (dict message:"Admin already exists"))
-                (else (mongo insertObject:(dict username:(admin username:)
-                                                password:((admin password:) agent_md5HashWithSalt:PASSWORD_SALT)
-                                                  secret:((AgentUUID new) stringValue)
-                                                verified:YES
-                                                   admin:YES)
-                           intoCollection:"accounts.users")
-                      (dict message:"ok")))))
-
 ;; restart control
-(get "/control/restart"
-     (auth (RESPONSE setExit:1)
-           (RESPONSE redirectResponseToLocation:"/restart.html")
-           (dict message:"OK")))
+(post "/control/restart"
+      (auth (RESPONSE setExit:1)
+            (RESPONSE redirectResponseToLocation:"/restart.html")
+            (dict message:"OK")))
 
 ;; get nginx configuration and status
 (get "/control/nginx"
@@ -541,12 +529,7 @@ END)))))
 
 ;; create an app
 (post "/control/apps"
-      (auth (set app (dict name:((REQUEST post) name:)
-                           path:((REQUEST post) path:)
-                        domains:((REQUEST post) domains:)
-                    description:((REQUEST post) description:)
-                        workers:(((REQUEST post) workers:) intValue)
-                       owner_id:(account _id:)))
+      (auth (set app ((REQUEST body) propertyListValue))
             (set appid ((add-app app) stringValue))
             (dict message:"OK" appid:appid)))
 
@@ -636,30 +619,13 @@ END)))))
 ;; set the hostname
 (post "/control/hostname"
       (auth (set hostname ((REQUEST post) hostname:))
-	    (hostname writeToFile:"/etc/hostname" atomically:YES)
+            (hostname writeToFile:"/etc/hostname" atomically:YES)
             (dict message:"OK" hostname:hostname)))
 
-;; confirm the hostname
+;; get the hostname
 (get "/control/hostname"
      (auth (set hostname (NSString stringWithContentsOfFile:"/etc/hostname"))
            (dict message:"OK" hostname:hostname)))
-
-;; upload agent certificate and private key, enabling SSL
-(post "/control/credentials"
-      (auth (set credentials ((REQUEST body) propertyListValue))
-            (if (and credentials (credentials agent_key:) (certs agent_crt:))
-                (then ((credentials agent_key:) writeToFile:"/home/control/etc/agent.key" atomically:YES)
-                      ((credentials agent_crt:) writeToFile:"/home/control/etc/agent.crt" atomically:YES)
-                      (restart-nginx)
-                      (dict message:"OK"))
-                (else (dict message:"missing credentials")))))
-
-;; remove agent certificate and private key, disabling SSL
-(delete "/control/credentials"
-        (auth (system "rm /home/control/etc/agent.key")
-              (system "rm /home/control/etc/agent.crt")
-              (restart-nginx)
-              (dict message:"OK")))
 
 (AgentHTTPServer run)
 

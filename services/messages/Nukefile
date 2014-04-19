@@ -3,6 +3,7 @@
 (set APP (dict name:"messages"
                path:"messages"
             workers:1
+             system:1
             domains:""
         description:"Agent communications manager."))
 

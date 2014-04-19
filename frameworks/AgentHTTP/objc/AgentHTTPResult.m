@@ -15,4 +15,10 @@
     return [[NSString alloc] initWithData:self.data encoding:NSUTF8StringEncoding];
 }
 
+- (id) propertyList {
+    return [NSPropertyListSerialization propertyListWithData:self.data
+                                                     options:0
+                                                      format:NULL
+                                                       error:NULL];
+}
 @end

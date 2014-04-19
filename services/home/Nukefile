@@ -2,6 +2,8 @@
 
 (set APP (dict name:"home"
                path:"home"
+             system:1
+             hidden:1
             workers:1
             domains:""
         description:"Agent home."))

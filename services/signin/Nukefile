@@ -2,9 +2,14 @@
 
 (set APP (dict name:"signin"
                path:"signin"
+             hidden:1
+             system:1
             workers:1
             domains:""
         description:"Agent signin service."))
 
 (set AGENT "http://alpha.agent.io")
 (set CREDENTIALS "admin:master123")
+
+(set STORE "http://alpha.agent.io")
+(set STORE_CREDENTIALS "admin:master123")

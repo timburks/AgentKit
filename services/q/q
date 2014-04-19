@@ -1,0 +1,187 @@
+#!/usr/local/bin/nush
+(load "AgentHTTP")
+(load "AgentCrypto")
+(load "AgentMongoDB")
+(load "AgentKit")
+
+
+(macro auth (*body) ;; the body should return a (dict)
+       `(progn (RESPONSE setValue:"application/xml" forHTTPHeader:"Content-Type")
+               (set authorization ((REQUEST headers) Authorization:))
+               (set parts (authorization componentsSeparatedByString:" "))
+               (case ((parts 0) lowercaseString)
+                     ("basic" (set credentials (NSString stringWithData:(NSData agent_dataWithBase64EncodedString:(parts 1))
+                                                               encoding:NSUTF8StringEncoding))
+                              (set parts (credentials componentsSeparatedByString:":"))
+                              (set username (parts 0))
+                              (set password (parts 1))
+                              (mongo-connect)
+                              (set account (mongo findOne:(dict username:username
+                                                                password:(password agent_md5HashWithSalt:PASSWORD_SALT))
+                                             inCollection:"accounts.users")))
+                     ("bearer" (set secret (parts 1))
+                               (mongo-connect)
+                               (set account (mongo findOne:(dict secret:secret)
+                                              inCollection:"accounts.users")))
+                     (else (set account nil)))
+               (if account
+                   (then (set response (progn ,@*body)))
+                   (else (RESPONSE setStatus:401)
+                         (set response (dict message:"Unauthorized"))))
+               (response XMLPropertyListRepresentation)))
+
+(get "/q"
+     (authenticate)
+     (set mongo (AgentMongoDB new))
+     (mongo connect)
+     (set apps (mongo findArray:nil inCollection:"q.apps"))
+     (htmlpage "Quartermaster"
+               (topbar-for-app "Quartermaster" nil)
+               
+               (&div class:"row"
+                     (&div class:"small-12 columns"
+                           (&h1 "Quartermaster")
+                           (&h2 "Standard Agent Apps")
+                           (&ul ((apps select:(do (app) (eq (app system:) 1))) map:
+                                 (do (app) (&li (&a href:(+ "/q/apps/" (app _id:)) (app name:))))))
+                           (&hr)
+                           (&h2 "Optional apps")
+                           (&ul ((apps select:(do (app) (ne (app system:) 1))) map:
+                                 (do (app) (&li (&a href:(+ "/q/apps/" (app _id:)) (app name:))))))
+                           ))))
+
+(get "/q/add"
+     (authenticate)
+     (htmlpage "Quartermaster"
+               (topbar-for-app "Store" nil)
+               (&div class:"row"
+                     (&div class:"small-12 columns"
+                           (&h1 "Add an app")
+                           (&form action:"/q/add/"
+                                      id:"edit" method:"post"
+                                  (&label "App name"
+                                          (&input name:"name" size:"40" type:"text"))
+                                  (&label "App URL"
+                                          (&input name:"url" size:"40" type:"text"))
+                                  (&label "Description"
+                                          (&textarea name:"description" rows:"5" cols:"60"))
+                                  (&input name:"save" type:"submit" value:"Save")
+                                  " or "
+                                  (&a href:"/q" "Cancel"))))))
+
+(post "/q/add"
+      (set app (REQUEST post))
+      (if (and (app name:)
+               (app url:))
+          (then (set mongo (AgentMongoDB new))
+                (mongo connect)
+                ;(mongo insertObject:app intoCollection:"q.apps")
+                (redirect "/q"))
+          (else "Missing info")))
+
+(get "/q/apps/appid:"
+     (set mongo (AgentMongoDB new))
+     (mongo connect)
+     (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"q.apps"))
+     (htmlpage "Agent I/O App Store"
+               (topbar-for-app "Store" nil)
+               
+               (&div class:"row"
+                     (&div class:"small-12 columns"
+                           (&h1 "App Store")
+                           (&p (&a href:(+ "/q/apps/" (app _id:)) (app name:)))
+                           (&pre (app description))))))
+
+
+
+(get "/q/apps/appid:/versionid:"
+     
+     "version")
+
+(def add-version (app appfile-name appfile-data)
+     (set version ((AgentUUID new) stringValue))
+     (mongo-connect)
+     (mongo writeData:appfile-data
+                named:version
+         withMIMEType:"application/zip"
+         inCollection:"appfiles"
+           inDatabase:"q")
+     (set version
+          (dict version:version
+               filename:appfile-name
+             created_at:(NSDate date)))
+     
+     (set versions (or (app versions:) (array)))
+     (versions addObject:version)
+     (set update (dict versions:versions))
+     (mongo updateObject:(dict $set:update)
+            inCollection:"q.apps"
+           withCondition:(dict _id:(app _id:))
+       insertIfNecessary:NO
+   updateMultipleEntries:NO)
+     (puts "updating")
+     (puts (update description))
+     (puts "for app")
+     (puts (app description))
+     version)
+
+;; create an app
+
+(get "/q/api"
+     (auth "OK"))
+
+(get "/q/api/apps"
+     (auth (mongo-connect)
+           (set apps (mongo findArray:nil
+                         inCollection:"q.apps"
+                      returningFields:(dict _id:1 name:1 system:1)
+                       numberToReturn:1000
+                         numberToSkip:0))
+           (dict message:"OK" apps:apps)))
+
+;; get details for an individual app
+(get "/q/api/apps/appid:"
+     (auth (mongo-connect)
+           (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"q.apps"))
+           (dict message:"OK" app:app)))
+
+(post "/q/api/apps"
+      (auth (set app ((REQUEST body) propertyListValue))
+            (mongo-connect)
+            (set appid (mongo insertObject:app intoCollection:"q.apps"))
+            (dict message:"OK" appid:appid)))
+
+;; delete an app and all versions
+(delete "/q/apps/appid:"
+        (auth (mongo-connect)
+              (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"q.apps"))
+              (unless app (return (dict message:"unknown app")))
+              (mongo removeWithCondition:(dict _id:(oid appid)) fromCollection:"q.apps")
+              ((app versions:) each:
+               (do (version)
+                   (mongo removeFile:(version version:)
+                        inCollection:"appfiles"
+                          inDatabase:"q")))
+              (dict message:"OK")))
+
+;; add a version of an app
+(post "/q/api/apps/appid:"
+      (auth (mongo-connect)
+            (set app (mongo findOne:(dict _id:(oid appid)) inCollection:"q.apps"))
+            (unless app (return (dict message:"error: app #{appname} not found")))
+            (if (and (set appfile-data (REQUEST body))
+                     (appfile-data length)
+                     (set appfile-name (+ (app name:) ".zip")))
+                (then ;; save appfile
+                      (set version (add-version app appfile-name appfile-data))
+                      (dict message:"OK" version:(version version:)))
+                (else (dict message:"error: invalid app data")))))
+
+(delete "/q/apps/appid:"
+        "delete it"
+        (set mongo (AgentMongoDB new))
+        (mongo connect)
+        (mongo removeWithCondition:(dict _id:(oid appid)) fromCollection:"q.apps")
+        "OK")
+
+(AgentHTTPServer run)

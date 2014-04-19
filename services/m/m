@@ -38,7 +38,7 @@
            (else (dictionary description))
            ))
 
-(get "/chief"
+(get "/m"
      (authenticate)
      (if screen_name
          (then
@@ -52,17 +52,17 @@
                         (&div class:"row"
                               (&div class:"small-12 columns"
                                     (&h1 "Hello, Chief!")
-                                    (&p (&a href:"/chief/ocean" "Digital Ocean"))
+                                    (&p (&a href:"/m/ocean" "Digital Ocean"))
                                     (if (set droplets (response droplets:))
                                         (&ul (droplets map:
                                                        (do (droplet)
-                                                           (&li (&a href:(+ "/chief/droplet/" (droplet id:)) (droplet name:)))))))
+                                                           (&li (&a href:(+ "/m/droplet/" (droplet id:)) (droplet name:)))))))
                                     (&hr)
                                     ))))
          (else (redirect "/signin"))))
 
 
-(get "/chief/ocean"
+(get "/m/ocean"
      (authenticate)
      (if screen_name
          (then (htmlpage "Chief"
@@ -70,15 +70,15 @@
                          (&div class:"row"
                                (&div class:"small-12 columns"
                                      (&h3 "Digital Ocean")
-                                     (&ul (&li (&a href:"/chief/ocean/droplets" "droplets"))
-                                          (&li (&a href:"/chief/ocean/domains" "domains"))
-                                          (&li (&a href:"/chief/ocean/regions" "regions"))
-                                          (&li (&a href:"/chief/ocean/images" "images"))
-                                          (&li (&a href:"/chief/ocean/sshKeys" "sshKeys"))
-                                          (&li (&a href:"/chief/ocean/sizes" "sizes")))))))
+                                     (&ul (&li (&a href:"/m/ocean/droplets" "droplets"))
+                                          (&li (&a href:"/m/ocean/domains" "domains"))
+                                          (&li (&a href:"/m/ocean/regions" "regions"))
+                                          (&li (&a href:"/m/ocean/images" "images"))
+                                          (&li (&a href:"/m/ocean/sshKeys" "sshKeys"))
+                                          (&li (&a href:"/m/ocean/sizes" "sizes")))))))
          (else (redirect "/signin"))))
 
-(get "/chief/ocean/droplets"
+(get "/m/ocean/droplets"
      (authenticate)
      (if screen_name
          (then (set ocean (DigitalOcean new))
@@ -93,7 +93,7 @@
                                      (divs-for-dictionary droplets)))))
          (else (redirect "/signin"))))
 
-(get "/chief/ocean/domains"
+(get "/m/ocean/domains"
      (authenticate)
      (if screen_name
          (then (set ocean (DigitalOcean new))
@@ -108,7 +108,7 @@
                                      (divs-for-dictionary domains)))))
          (else (redirect "/signin"))))
 
-(get "/chief/ocean/regions"
+(get "/m/ocean/regions"
      (authenticate)
      (if screen_name
          (then (set ocean (DigitalOcean new))
@@ -123,7 +123,7 @@
                                      (divs-for-dictionary regions)))))
          (else (redirect "/signin"))))
 
-(get "/chief/ocean/images"
+(get "/m/ocean/images"
      (authenticate)
      (if screen_name
          (then (set ocean (DigitalOcean new))
@@ -138,7 +138,7 @@
                                      (divs-for-dictionary images)))))
          (else (redirect "/signin"))))
 
-(get "/chief/ocean/sshKeys"
+(get "/m/ocean/sshKeys"
      (authenticate)
      (if screen_name
          (then (set ocean (DigitalOcean new))
@@ -153,7 +153,7 @@
                                      (divs-for-dictionary sshKeys)))))
          (else (redirect "/signin"))))
 
-(get "/chief/ocean/sizes"
+(get "/m/ocean/sizes"
      (authenticate)
      (if screen_name
          (then (set ocean (DigitalOcean new))
@@ -169,7 +169,7 @@
          (else (redirect "/signin"))))
 
 
-(get "/chief/droplet/dropletid:"
+(get "/m/droplet/dropletid:"
      (authenticate)
      (if screen_name
          (then (set ocean (DigitalOcean new))

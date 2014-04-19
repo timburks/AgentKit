@@ -1,0 +1,29 @@
+#!/usr/local/bin/nush
+(load "AgentHTTP")
+(load "AgentXML")
+(load "AgentJSON")
+(load "AgentCrypto")
+(load "AgentMongoDB")
+(load "AgentKit")
+
+
+(get "/abitalk"
+     (set result (dict message:"Hello Emmy!"
+                            pi:3.141529
+                          time:(NSDate date)))
+     (result agent_JSONRepresentation))
+
+(post "/abitalk/score"
+      (set p (REQUEST post))
+      (set mongo (AgentMongoDB new))
+      (mongo connect)
+      (set id (mongo insertObject:p intoCollection:"abitalk.scores"))
+      (id description))
+
+(get "/abitalk/scores"
+     (set mongo (AgentMongoDB new))
+     (mongo connect)
+     (set scores (mongo findArray:nil inCollection:"abitalk.scores"))
+     (scores XMLPropertyListRepresentation))
+
+(AgentHTTPServer run)

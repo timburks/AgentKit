@@ -2,6 +2,7 @@
 
 (set APP (dict name:"collections"
                path:"collections"
+             system:1
             workers:1
             domains:""
         description:"Agent data editor."))

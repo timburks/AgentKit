@@ -1,5 +1,35 @@
 (load "AgentJSON")
 (load "AgentHTTP")
+(load "AgentCrypto")
+
+(class AgentHTTPClient
+ (+ certifyRequest:request withCredentials:credentials is
+    (set authorization (+ "Basic "
+                          ((credentials dataUsingEncoding:NSUTF8StringEncoding)
+                           agent_base64EncodedString)))
+    (request setValue:authorization forHTTPHeaderField:"Authorization"))
+ 
+ (+ performGet:path withCredentials:credentials is
+    (set request (NSMutableURLRequest requestWithURL:(NSURL URLWithString:path)))
+    (self certifyRequest:request withCredentials:credentials)
+    (AgentHTTPClient performRequest:request))
+ 
+ (+ performPost:path withData:data credentials:credentials is
+    (set request (NSMutableURLRequest requestWithURL:(NSURL URLWithString:path)))
+    (request setHTTPMethod:"POST")
+    (request setHTTPBody:data)
+    (request setValue:"application/plist" forHTTPHeaderField:"Content-Type")
+    (self certifyRequest:request withCredentials:credentials)
+    (AgentHTTPClient performRequest:request))
+ 
+ (+ performPost:path withObject:object credentials:credentials is
+    (puts "posting #{(object description)}")
+    (set request (NSMutableURLRequest requestWithURL:(NSURL URLWithString:path)))
+    (request setHTTPMethod:"POST")
+    (request setHTTPBody:(object XMLPropertyListRepresentation))
+    (request setValue:"application/plist" forHTTPHeaderField:"Content-Type")
+    (self certifyRequest:request withCredentials:credentials)
+    (AgentHTTPClient performRequest:request)))
 
 (task "zip" is
       (SH "mkdir -p build/#{(APP name:)}.app")
@@ -88,16 +118,18 @@
                 (puts "apps: #{(results description)}"))
           (else (puts "App not found"))))
 
-(task "create" is
-      (set post (APP agent_urlQueryString))
-      (set command (+ "curl -s "
-                      " -d \"" post "\""
-                      " -X POST"
-                      " " AGENT "/control/apps"
-                      " -u " CREDENTIALS))
-      (puts command)
-      (set results (NSString stringWithShellCommand:command))
-      (puts "apps: #{(results description)}"))
+(task "create" => "list" is
+      (set app (APPS find:(do (app) (eq (app name:) (APP name:)))))
+      (if app
+          (then (puts "App already exists"))
+          (else (puts "Creating app")
+                ;; if it doesn't exist, create it
+                (set result (AgentHTTPClient performPost:(+ AGENT "/control/apps")
+                                              withObject:APP
+                                             credentials:CREDENTIALS))
+                (puts "apps: #{(result UTF8String)}")
+                (set appid ((result propertyList) appid:)))))
+
 
 (task "restart" is
       (set command (+ "curl -s "
@@ -125,6 +157,40 @@
       (puts command)
       (set results (NSString stringWithShellCommand:command))
       (puts "apps: #{(results description)}"))
+
+(task "store" => "zip" is
+      ;; look for the app on the store
+      (set path (+ AGENT "/q/api/apps"))
+      (set result (AgentHTTPClient performGet:path withCredentials:CREDENTIALS))
+      (set store_apps ((result propertyList) apps:))
+      (store_apps each:
+                  (do (APP)
+                      (puts (+ (APP _id:) " " (APP name:)))))
+      (puts (store_apps description))
+      
+      (set app (store_apps find:(do (app) (eq (app name:) (APP name:)))))
+      (if app
+          (then (set appid (app _id:)))
+          (else (puts "create app")
+                ;; if it doesn't exist, create it
+                (set result (AgentHTTPClient performPost:(+ AGENT "/q/api/apps")
+                                              withObject:APP
+                                             credentials:CREDENTIALS))
+                (puts "apps: #{(result UTF8String)}")
+                (set appid ((result propertyList) appid:))))
+      
+      (puts "posting version for app #{appid}")
+      (set result (AgentHTTPClient performPost:(+ AGENT "/q/api/apps/" appid)
+                                      withData:(NSData dataWithContentsOfFile:(+ "build/" (APP name:) ".zip"))
+                                   credentials:CREDENTIALS))
+      (set version ((result propertyList) version:))
+      (puts "uploaded version #{version}")
+      
+      "ok")
+
+
+
+
 
 (task "default" => "zip")
 

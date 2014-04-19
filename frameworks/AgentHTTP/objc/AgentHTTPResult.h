@@ -14,4 +14,5 @@
 @property (nonatomic, strong) NSError *error;
 
 - (NSString *) UTF8String;
+- (id) propertyList;
 @end

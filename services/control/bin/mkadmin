@@ -1,0 +1,14 @@
+#!/usr/local/bin/nush
+
+(load "/home/control/lib/control-common.nu")
+(load "/home/control/lib/control-mongodb.nu")
+
+(set args ((NSProcessInfo processInfo) arguments))
+
+(if (eq (args count) 4)
+    (then (set username (args 2))
+          (set password (args 3))
+          (ControlMongoDB createAdminWithUsername:username password:password)
+          (puts "ok"))
+    (else (puts "Usage: mkadmin <user> <password>")))
+

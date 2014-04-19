@@ -1,0 +1,46 @@
+#!/usr/local/bin/nush
+(load "AgentHTTP")
+(load "AgentCrypto")
+(load "AgentMongoDB")
+(load "AgentJSON")
+(load "AgentKit")
+
+(macro topbar ()
+       (set additional-items nil)
+       (topbar-for-app "Mail" additional-items))
+
+(get "/mail"
+     (authenticate)
+     
+     (set homes (((NSFileManager defaultManager) contentsOfDirectoryAtPath:"/home" error:nil) mutableCopy))
+     (homes removeObject:"control")
+    ; (set homes (homes sortedArray))
+     (set mongo (AgentMongoDB new))
+     (mongo connect)
+     (if screen_name
+         (then (set mailaccounts (mongo findArray:(dict $query:(dict) $orderby:(dict created:-1)) inCollection:"mail.accounts"))
+               (htmlpage "Agent Mail"
+                         (topbar)
+                         (&div class:"row"
+                               (&div class:"medium-8 small-12 columns"
+                                     (&div (&h1 "Mail")
+                                           (&ul (homes map:(do (home) (&li home))))
+                                           (&ul (mailaccounts map:(do (mailaccount)
+                                                                      (&li (&pre (mailaccount description)))))))))))
+         (else (redirect "/signin"))))
+
+(files "/accounts/*path:" "public")
+
+(get "/*path:"
+     (authenticate)
+     (RESPONSE setStatus:404)
+     (htmlpage "Not found"
+               (topbar)
+               (&div class:"row"
+                     (&div class:"large-12 columns"
+                           (&h3 "404 Resource Not Found")
+                           (&p "You wanted: #{*path}")
+                           (&p "Sorry.")))))
+
+(AgentHTTPServer runVerbosely)
+
